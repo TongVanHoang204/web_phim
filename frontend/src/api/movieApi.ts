@@ -145,11 +145,58 @@ function relatedKeyword(movie: Movie) {
     .trim();
 }
 
+function normalizeRelatedKeyword(keyword: string) {
+  return keyword
+    .replace(/\([^)]*(phần|phan|season|ss|s\d+)[^)]*\)/gi, " ")
+    .replace(/\b(phần|phan|season)\s*\d+\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function relatedType(movie: Movie) {
+  if (movie.country?.some((item) => item.slug === "trung-quoc")) return "china";
+  if (movie.country?.some((item) => item.slug === "nhat-ban")) return "japan";
+  return "all";
+}
+
 export async function getRelatedMovies(movie: Movie, limit = 8) {
-  const keyword = relatedKeyword(movie);
-  if (keyword.length < 3) return [];
-  const results = await searchMovies(keyword);
-  return results.filter((item) => item.slug !== movie.slug).slice(0, limit);
+  const keyword = normalizeRelatedKeyword(relatedKeyword(movie));
+  const seen = new Set([movie.slug]);
+  const related: Movie[] = [];
+
+  function append(items: Movie[]) {
+    for (const item of items) {
+      if (seen.has(item.slug)) continue;
+      seen.add(item.slug);
+      related.push(item);
+      if (related.length >= limit) break;
+    }
+  }
+
+  if (keyword.length >= 3) {
+    try {
+      append(await searchMovies(keyword));
+    } catch {
+      // Category fallback below keeps the detail page populated when search is empty or slow.
+    }
+  }
+
+  const categories = (movie.category || []).filter((item) => !isBlockedTaxonomy(item)).slice(0, 3);
+  for (const category of categories) {
+    if (related.length >= limit) break;
+    try {
+      const results = await getMoviesByCategory(category.slug, {
+        type: relatedType(movie),
+        page: 1,
+        limit: limit + 6,
+      });
+      append(results.items);
+    } catch {
+      // Try the next real category from the movie.
+    }
+  }
+
+  return related.slice(0, limit);
 }
 
 export async function searchMovies(keyword: string) {

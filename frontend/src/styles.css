@@ -771,6 +771,11 @@ a {
   gap: 12px;
 }
 
+.detail-lower {
+  display: grid;
+  gap: clamp(22px, 4vw, 54px);
+}
+
 .detail-related-panel h2 {
   margin: 0;
   color: white;
@@ -833,6 +838,14 @@ a {
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
+}
+
+.detail-related-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.5;
 }
 
 .detail-content h1,
@@ -1089,6 +1102,164 @@ a {
   border: 0;
   background: #020617;
   object-fit: contain;
+}
+
+.custom-player {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #020617;
+}
+
+.custom-player.controls-idle {
+  cursor: none;
+}
+
+.custom-player .native-video {
+  display: block;
+}
+
+.player-center-play {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  z-index: 3;
+  display: inline-grid;
+  place-items: center;
+  width: 86px;
+  height: 86px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  background: rgba(2, 6, 23, 0.62);
+  color: white;
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  backdrop-filter: blur(16px);
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease,
+    background 180ms ease;
+}
+
+.custom-player.controls-visible .player-center-play,
+.native-video:focus-visible + .player-center-play {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.custom-player:not(.controls-visible) .player-center-play {
+  transform: translate(-50%, -50%) scale(0.92);
+}
+
+.player-center-play:hover {
+  background: rgba(15, 23, 42, 0.82);
+}
+
+.player-controls {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 4;
+  display: grid;
+  gap: 10px;
+  padding: 46px clamp(14px, 2.2vw, 24px) clamp(12px, 2vw, 20px);
+  background: linear-gradient(180deg, transparent, rgba(2, 6, 23, 0.82) 52%, rgba(2, 6, 23, 0.96));
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(12px);
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+.custom-player.controls-visible .player-controls,
+.player-controls:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.player-seek,
+.player-volume {
+  width: 100%;
+  accent-color: #f0148a;
+  cursor: pointer;
+}
+
+.player-seek {
+  height: 18px;
+}
+
+.player-control-row,
+.player-left-controls,
+.player-right-controls {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.player-control-row {
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.player-left-controls,
+.player-right-controls {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.player-controls button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.075);
+  color: white;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.player-controls button:hover {
+  background: rgba(255, 255, 255, 0.14);
+  transform: translateY(-1px);
+}
+
+.player-controls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+  transform: none;
+}
+
+.player-controls button:disabled:hover {
+  background: rgba(255, 255, 255, 0.075);
+}
+
+.player-episode-button {
+  gap: 6px;
+}
+
+.player-time {
+  min-width: 112px;
+  color: #e2e8f0;
+  font-size: 12px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.player-volume {
+  max-width: 86px;
 }
 
 .player-fallback {
@@ -2065,7 +2236,7 @@ body::before {
 }
 
 .detail-layout.detail-cinematic .taxonomy-line span,
-.detail-layout.detail-cinematic .episode-list a {
+.detail-bottom-panel .episode-list a {
   border-color: rgba(214, 226, 255, 0.16);
   background: rgba(255, 255, 255, 0.045);
   backdrop-filter: blur(12px);
@@ -2075,34 +2246,47 @@ body::before {
   margin-top: 28px;
 }
 
-.detail-layout.detail-cinematic .episode-list {
-  max-width: 980px;
-  margin-top: 38px;
-  padding-top: 28px;
-  border-top: 1px solid rgba(214, 226, 255, 0.16);
+.detail-bottom-panel {
+  margin-top: 24px;
+  padding: clamp(22px, 4vw, 38px);
+  border: 1px solid rgba(214, 226, 255, 0.13);
+  border-radius: 24px;
+  background: rgba(7, 10, 18, 0.72);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(18px);
 }
 
-.detail-layout.detail-cinematic .episode-server > div {
+.detail-bottom-panel .detail-lower {
+  grid-template-columns: minmax(210px, 300px) minmax(0, 1fr);
+  align-items: start;
+}
+
+.detail-bottom-panel .episode-list {
+  max-width: none;
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.detail-bottom-panel .episode-server > div {
   grid-template-columns: repeat(auto-fill, minmax(68px, 1fr));
   gap: 8px;
 }
 
-.detail-layout.detail-cinematic .episode-list a {
+.detail-bottom-panel .episode-list a {
   min-height: 32px;
   padding-inline: 8px;
 }
 
-.detail-layout.detail-cinematic .detail-related-panel {
+.detail-bottom-panel .detail-related-panel {
   max-width: 300px;
-  padding-top: 4px;
-  border-top: 1px solid rgba(214, 226, 255, 0.14);
 }
 
-.detail-layout.detail-cinematic .detail-related-panel h2 {
+.detail-bottom-panel .detail-related-panel h2 {
   font-size: 16px;
 }
 
-.detail-layout.detail-cinematic .detail-related-item {
+.detail-bottom-panel .detail-related-item {
   border-color: rgba(214, 226, 255, 0.1);
   background: rgba(255, 255, 255, 0.035);
   backdrop-filter: blur(12px);
@@ -2138,7 +2322,7 @@ body::before {
 
 .watch-layout.watch-cinema .watch-header {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 18px;
   padding: 0 0 18px;
@@ -2302,8 +2486,12 @@ body::before {
     grid-template-columns: minmax(170px, 240px) minmax(0, 1fr);
   }
 
-  .detail-layout.detail-cinematic .detail-related-panel {
+  .detail-bottom-panel .detail-related-panel {
     max-width: none;
+  }
+
+  .detail-bottom-panel .detail-lower {
+    grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
   }
 
   .watch-stage {
@@ -2343,6 +2531,10 @@ body::before {
   }
 
   .detail-layout.detail-cinematic .detail-side {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-bottom-panel .detail-lower {
     grid-template-columns: 1fr;
   }
 

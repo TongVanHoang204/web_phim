@@ -10,12 +10,18 @@ import {
   History,
   Info,
   Loader2,
+  Maximize2,
+  Pause,
   Play,
   Search,
+  SkipBack,
+  SkipForward,
   SlidersHorizontal,
   Star,
   TrendingUp,
   Tv,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import {
   getCategories,
@@ -642,30 +648,178 @@ function latestEpisodeFrom<T extends EpisodeItem>(episodes: T[]) {
   return newestEpisodesFirst(episodes)[0] as T | undefined;
 }
 
-function RelatedMoviesPanel({ movies }: { movies: Movie[] }) {
-  if (!movies.length) return null;
+function adSkipDuration() {
+  return AD_SKIP_END_SECONDS - AD_SKIP_START_SECONDS;
+}
 
+function visibleDurationFromActual(duration: number) {
+  if (!Number.isFinite(duration) || duration <= 0) return 0;
+  return duration > AD_SKIP_END_SECONDS ? duration - adSkipDuration() : duration;
+}
+
+function visibleTimeFromActual(time: number, duration: number) {
+  if (!Number.isFinite(time) || time <= 0) return 0;
+  if (duration <= AD_SKIP_START_SECONDS || time < AD_SKIP_END_SECONDS) return Math.min(time, visibleDurationFromActual(duration));
+  return Math.min(time - adSkipDuration(), visibleDurationFromActual(duration));
+}
+
+function actualTimeFromVisible(time: number, duration: number) {
+  if (!Number.isFinite(time) || time <= 0) return 0;
+  if (duration <= AD_SKIP_START_SECONDS || time < AD_SKIP_START_SECONDS) return time;
+  return Math.min(time + adSkipDuration(), duration || time);
+}
+
+function formatPlayerTime(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return "0:00";
+  const totalSeconds = Math.floor(value);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours) return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function RelatedMoviesPanel({ movies }: { movies: Movie[] }) {
   return (
     <section className="detail-related-panel">
       <h2>Phim liên quan</h2>
-      <div>
-        {movies.slice(0, 8).map((item) => (
-          <Link className="detail-related-item" key={item.slug} to={`/phim/${item.slug}`}>
-            <img src={poster(item)} alt={displayText(item.name)} loading="lazy" />
-            <span>
-              <strong>{displayText(item.name)}</strong>
-              <small>{episodeBadge(item) || item.year || movieKind(item)}</small>
-            </span>
-          </Link>
-        ))}
-      </div>
+      {movies.length ? (
+        <div>
+          {movies.slice(0, 8).map((item) => (
+            <Link className="detail-related-item" key={item.slug} to={`/phim/${item.slug}`}>
+              <img src={poster(item)} alt={displayText(item.name)} loading="lazy" />
+              <span>
+                <strong>{displayText(item.name)}</strong>
+                <small>{episodeBadge(item) || item.year || movieKind(item)}</small>
+              </span>
+            </Link>
+          ))}
+        </div>
+      ) : (
+        <p className="detail-related-empty">Đang tìm phim cùng thể loại...</p>
+      )}
     </section>
   );
 }
 
-function HlsVideoPlayer({ episode, title }: { episode: EpisodeItem; title: string }) {
+function HlsVideoPlayer({
+  episode,
+  title,
+  hasNextEpisode,
+  hasPreviousEpisode,
+  onNextEpisode,
+  onPreviousEpisode,
+}: {
+  episode: EpisodeItem;
+  title: string;
+  hasNextEpisode: boolean;
+  hasPreviousEpisode: boolean;
+  onNextEpisode: () => void;
+  onPreviousEpisode: () => void;
+}) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const hideControlsTimer = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const [hlsError, setHlsError] = useState("");
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [paused, setPaused] = useState(true);
+  const [muted, setMuted] = useState(false);
+  const [volume, setVolume] = useState(1);
+
+  function clearHideControlsTimer() {
+    if (hideControlsTimer.current) {
+      window.clearTimeout(hideControlsTimer.current);
+      hideControlsTimer.current = null;
+    }
+  }
+
+  function showControlsTemporarily(force = false) {
+    const video = videoRef.current;
+    clearHideControlsTimer();
+    setControlsVisible(true);
+
+    if (force || !video || video.paused) return;
+    hideControlsTimer.current = window.setTimeout(() => {
+      setControlsVisible(false);
+    }, 2400);
+  }
+
+  function togglePlayback() {
+    const video = videoRef.current;
+    if (!video) return;
+    showControlsTemporarily(true);
+    if (video.paused) {
+      void video.play().catch(() => undefined);
+      return;
+    }
+    video.pause();
+  }
+
+  function seekToVisibleTime(value: number) {
+    const video = videoRef.current;
+    if (!video) return;
+    video.currentTime = actualTimeFromVisible(value, duration);
+    setCurrentTime(video.currentTime);
+    showControlsTemporarily();
+  }
+
+  function skipBy(seconds: number) {
+    const video = videoRef.current;
+    if (!video) return;
+    const nextVisibleTime = Math.max(0, Math.min(visibleTimeFromActual(video.currentTime, duration) + seconds, visibleDurationFromActual(duration)));
+    seekToVisibleTime(nextVisibleTime);
+  }
+
+  function toggleMute() {
+    const video = videoRef.current;
+    if (!video) return;
+    video.muted = !video.muted;
+    setMuted(video.muted);
+    showControlsTemporarily();
+  }
+
+  function changeVolume(value: number) {
+    const video = videoRef.current;
+    if (!video) return;
+    video.volume = value;
+    video.muted = value === 0;
+    setVolume(value);
+    setMuted(video.muted);
+    showControlsTemporarily();
+  }
+
+  async function toggleFullscreen() {
+    const video = videoRef.current;
+    const frame = video?.closest(".player-frame") as HTMLElement | null;
+    if (!frame) return;
+
+    showControlsTemporarily(true);
+    if (document.fullscreenElement) {
+      await document.exitFullscreen().catch(() => undefined);
+      return;
+    }
+    await frame.requestFullscreen().catch(() => undefined);
+  }
+
+  useEffect(() => {
+    function isTypingTarget(target: EventTarget | null) {
+      const element = target as HTMLElement | null;
+      if (!element) return false;
+      return ["INPUT", "TEXTAREA", "SELECT"].includes(element.tagName) || element.isContentEditable;
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.ctrlKey || event.metaKey || event.altKey || isTypingTarget(event.target)) return;
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+
+      event.preventDefault();
+      skipBy(event.key === "ArrowLeft" ? -10 : 10);
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [duration]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -683,6 +837,62 @@ function HlsVideoPlayer({ episode, title }: { episode: EpisodeItem; title: strin
     return () => {
       player.removeEventListener("timeupdate", skipMidrollAd);
       player.removeEventListener("seeking", skipMidrollAd);
+    };
+  }, [episode.link_m3u8]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return undefined;
+    const player = video;
+
+    function syncVideoState() {
+      setCurrentTime(player.currentTime || 0);
+      setDuration(player.duration || 0);
+      setPaused(player.paused);
+      setMuted(player.muted);
+      setVolume(player.volume);
+    }
+
+    function handlePlay() {
+      setPaused(false);
+      showControlsTemporarily();
+    }
+
+    function handlePause() {
+      setPaused(true);
+      showControlsTemporarily(true);
+    }
+
+    function keepControlsVisible() {
+      showControlsTemporarily(true);
+    }
+
+    function revealControlsBriefly() {
+      showControlsTemporarily();
+    }
+
+    player.addEventListener("loadedmetadata", syncVideoState);
+    player.addEventListener("durationchange", syncVideoState);
+    player.addEventListener("timeupdate", syncVideoState);
+    player.addEventListener("play", handlePlay);
+    player.addEventListener("pause", handlePause);
+    player.addEventListener("volumechange", syncVideoState);
+    player.addEventListener("waiting", keepControlsVisible);
+    player.addEventListener("seeking", revealControlsBriefly);
+    player.addEventListener("seeked", revealControlsBriefly);
+    syncVideoState();
+
+    return () => {
+      clearHideControlsTimer();
+      player.removeEventListener("loadedmetadata", syncVideoState);
+      player.removeEventListener("durationchange", syncVideoState);
+      player.removeEventListener("timeupdate", syncVideoState);
+      player.removeEventListener("play", handlePlay);
+      player.removeEventListener("pause", handlePause);
+      player.removeEventListener("volumechange", syncVideoState);
+      player.removeEventListener("waiting", keepControlsVisible);
+      player.removeEventListener("seeking", revealControlsBriefly);
+      player.removeEventListener("seeked", revealControlsBriefly);
     };
   }, [episode.link_m3u8]);
 
@@ -727,14 +937,74 @@ function HlsVideoPlayer({ episode, title }: { episode: EpisodeItem; title: strin
   }
 
   return (
-    <>
-      <video ref={videoRef} aria-label={title} className="native-video" controls playsInline poster="" />
+    <div
+      className={controlsVisible || paused ? "custom-player controls-visible" : "custom-player controls-idle"}
+      onDoubleClick={toggleFullscreen}
+      onMouseMove={() => showControlsTemporarily()}
+      onMouseLeave={() => showControlsTemporarily()}
+    >
+      <video ref={videoRef} aria-label={title} className="native-video" playsInline poster="" onClick={togglePlayback} />
+      <button className="player-center-play" onClick={togglePlayback} type="button" aria-label={paused ? "Phát phim" : "Tạm dừng"}>
+        {paused ? <Play size={40} fill="currentColor" /> : <Pause size={40} fill="currentColor" />}
+      </button>
+      <div className="player-controls" onMouseMove={() => showControlsTemporarily(true)}>
+        <input
+          aria-label="Tua phim"
+          className="player-seek"
+          max={visibleDurationFromActual(duration)}
+          min={0}
+          onChange={(event) => seekToVisibleTime(Number(event.currentTarget.value))}
+          step={0.1}
+          type="range"
+          value={visibleTimeFromActual(currentTime, duration)}
+        />
+        <div className="player-control-row">
+          <div className="player-left-controls">
+            <button onClick={togglePlayback} type="button" aria-label={paused ? "Phát phim" : "Tạm dừng"}>
+              {paused ? <Play size={18} fill="currentColor" /> : <Pause size={18} fill="currentColor" />}
+            </button>
+            <button onClick={() => skipBy(-10)} type="button" aria-label="Lùi 10 giây">
+              -10s
+            </button>
+            <button onClick={() => skipBy(10)} type="button" aria-label="Tới 10 giây">
+              +10s
+            </button>
+            <button className="player-episode-button" disabled={!hasPreviousEpisode} onClick={onPreviousEpisode} type="button" aria-label="Tập trước">
+              <SkipBack size={16} /> Tập trước
+            </button>
+            <button className="player-episode-button" disabled={!hasNextEpisode} onClick={onNextEpisode} type="button" aria-label="Tập sau">
+              Tập sau <SkipForward size={16} />
+            </button>
+            <span className="player-time">
+              {formatPlayerTime(visibleTimeFromActual(currentTime, duration))} / {formatPlayerTime(visibleDurationFromActual(duration))}
+            </span>
+          </div>
+          <div className="player-right-controls">
+            <button onClick={toggleMute} type="button" aria-label={muted ? "Bật âm thanh" : "Tắt âm thanh"}>
+              {muted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
+            </button>
+            <input
+              aria-label="Âm lượng"
+              className="player-volume"
+              max={1}
+              min={0}
+              onChange={(event) => changeVolume(Number(event.currentTarget.value))}
+              step={0.05}
+              type="range"
+              value={muted ? 0 : volume}
+            />
+            <button onClick={toggleFullscreen} type="button" aria-label="Toàn màn hình">
+              <Maximize2 size={18} />
+            </button>
+          </div>
+        </div>
+      </div>
       {hlsError ? (
         <a className="player-fallback" href={episode.link_embed} rel="noreferrer" target="_blank">
           Mở player dự phòng
         </a>
       ) : null}
-    </>
+    </div>
   );
 }
 
@@ -798,97 +1068,104 @@ function MovieDetailPage() {
   const voteCount = ratingCount(movie);
 
   return (
-    <motion.section
-      className="detail-layout detail-cinematic"
-      initial={{ opacity: 0, y: 18 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.45, ease: "easeOut" }}
-      style={{
-        backgroundImage: `linear-gradient(90deg, rgba(7, 10, 18, 0.9) 0%, rgba(7, 10, 18, 0.72) 42%, rgba(7, 10, 18, 0.5) 100%), linear-gradient(0deg, rgba(7, 10, 18, 0.94), rgba(7, 10, 18, 0.2)), url(${backdrop(movie)})`,
-      }}
-    >
-      <motion.div className="detail-side" initial={{ opacity: 0, x: -18 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.1, duration: 0.45 }}>
-        <div className="detail-poster">
-          <img src={poster(movie)} alt={displayText(movie.name)} />
-        </div>
-        <RelatedMoviesPanel movies={relatedMovies} />
-      </motion.div>
-      <motion.div className="detail-content" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.16, duration: 0.45 }}>
-        <Link className="back-link" to="/">
-          <ArrowLeft size={20} /> Trang chủ
-        </Link>
-        <div className="detail-kicker">
-          <span>{movieKind(movie)}</span>
-          <span>{movie.year || "Đang cập nhật"}</span>
-          <span>{rating(movie)}/10</span>
-        </div>
-        <h1>{displayText(movie.name)}</h1>
-        <p className="origin-name">{displayText(movie.origin_name)}</p>
-        <div className="detail-facts">
-          {categoryText ? (
-            <p>
-              <span>Thể loại:</span> <strong className="fact-link">{categoryText}</strong>
-            </p>
-          ) : null}
-          <p>
-            <span>Tập mới nhất:</span> <strong className="fact-badge">{episodeBadge(movie) || movie.episode_current || "Đang cập nhật"}</strong>
-          </p>
-          <p>
-            <span>Tình trạng:</span> <strong>{statusLabel(movie.status)}</strong>
-          </p>
-          {movie.view ? (
-            <p>
-              <span>Lượt xem:</span> <strong className="fact-badge">{compactNumber(movie.view)}</strong>
-            </p>
-          ) : null}
-          <p className="fact-rating">
-            <span>Đánh giá:</span> <strong>{starRating(movie)}</strong> <em>{rating(movie)}/10{voteCount ? ` - (${voteCount} bình chọn)` : ""}</em>
-          </p>
-          {updatedDate ? (
-            <p>
-              <span>Cập nhật:</span> <strong>{updatedDate}</strong>
-            </p>
-          ) : null}
-        </div>
-        <p className="movie-description">{displayText(movie.content) || "Nội dung đang được cập nhật."}</p>
-        <div className="taxonomy-line">
-          {movie.category?.map((item) => (
-            <span key={item.slug}>{displayText(item.name)}</span>
-          ))}
-          {movie.country?.map((item) => (
-            <span key={item.slug}>{displayText(item.name)}</span>
-          ))}
-        </div>
-        <div className="actions">
-          <Link
-            className="primary-button"
-            to={`/xem-phim/${movie.slug}${latestEpisode ? `?episode=${latestEpisode.slug}&server=${encodeURIComponent(latestEpisode.serverName)}` : ""}`}
-          >
-            <Play size={18} fill="currentColor" /> Tập mới nhất
+    <>
+      <motion.section
+        className="detail-layout detail-cinematic"
+        initial={{ opacity: 0, y: 18 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.45, ease: "easeOut" }}
+        style={{
+          backgroundImage: `linear-gradient(90deg, rgba(7, 10, 18, 0.9) 0%, rgba(7, 10, 18, 0.72) 42%, rgba(7, 10, 18, 0.5) 100%), linear-gradient(0deg, rgba(7, 10, 18, 0.94), rgba(7, 10, 18, 0.2)), url(${backdrop(movie)})`,
+        }}
+      >
+        <motion.div className="detail-side" initial={{ opacity: 0, x: -18 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.1, duration: 0.45 }}>
+          <div className="detail-poster">
+            <img src={poster(movie)} alt={displayText(movie.name)} />
+          </div>
+        </motion.div>
+        <motion.div className="detail-content" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.16, duration: 0.45 }}>
+          <Link className="back-link" to="/">
+            <ArrowLeft size={20} /> Trang chủ
           </Link>
-          <Link className="ghost-button" to={`/xem-phim/${movie.slug}`}>
-            <Film size={18} /> Xem từ đầu
-          </Link>
-        </div>
-        <div className="episode-list">
-          <h2>Danh sách tập</h2>
-          <div className="episode-server-groups">
-            {episodeServers.map((server) => (
-              <section className="episode-server" key={server.server_name}>
-                <h3>{cleanServerName(server.server_name)}</h3>
-                <div>
-                  {newestEpisodesFirst(server.server_data).map((episode) => (
-                    <Link key={`${server.server_name}-${episode.slug}-${episode.link_embed}`} to={`/xem-phim/${movie.slug}?episode=${episode.slug}`}>
-                      {displayText(episode.name)}
-                    </Link>
-                  ))}
-                </div>
-              </section>
+          <div className="detail-kicker">
+            <span>{movieKind(movie)}</span>
+            <span>{movie.year || "Đang cập nhật"}</span>
+            <span>{rating(movie)}/10</span>
+          </div>
+          <h1>{displayText(movie.name)}</h1>
+          <p className="origin-name">{displayText(movie.origin_name)}</p>
+          <div className="detail-facts">
+            {categoryText ? (
+              <p>
+                <span>Thể loại:</span> <strong className="fact-link">{categoryText}</strong>
+              </p>
+            ) : null}
+            <p>
+              <span>Tập mới nhất:</span> <strong className="fact-badge">{episodeBadge(movie) || movie.episode_current || "Đang cập nhật"}</strong>
+            </p>
+            <p>
+              <span>Tình trạng:</span> <strong>{statusLabel(movie.status)}</strong>
+            </p>
+            {movie.view ? (
+              <p>
+                <span>Lượt xem:</span> <strong className="fact-badge">{compactNumber(movie.view)}</strong>
+              </p>
+            ) : null}
+            <p className="fact-rating">
+              <span>Đánh giá:</span> <strong>{starRating(movie)}</strong> <em>{rating(movie)}/10{voteCount ? ` - (${voteCount} bình chọn)` : ""}</em>
+            </p>
+            {updatedDate ? (
+              <p>
+                <span>Cập nhật:</span> <strong>{updatedDate}</strong>
+              </p>
+            ) : null}
+          </div>
+          <p className="movie-description">{displayText(movie.content) || "Nội dung đang được cập nhật."}</p>
+          <div className="taxonomy-line">
+            {movie.category?.map((item) => (
+              <span key={item.slug}>{displayText(item.name)}</span>
+            ))}
+            {movie.country?.map((item) => (
+              <span key={item.slug}>{displayText(item.name)}</span>
             ))}
           </div>
+          <div className="actions">
+            <Link
+              className="primary-button"
+              to={`/xem-phim/${movie.slug}${latestEpisode ? `?episode=${latestEpisode.slug}&server=${encodeURIComponent(latestEpisode.serverName)}` : ""}`}
+            >
+              <Play size={18} fill="currentColor" /> Tập mới nhất
+            </Link>
+            <Link className="ghost-button" to={`/xem-phim/${movie.slug}`}>
+              <Film size={18} /> Xem từ đầu
+            </Link>
+          </div>
+        </motion.div>
+      </motion.section>
+
+      <motion.section className="detail-bottom-panel" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2, duration: 0.45 }}>
+        <div className="detail-lower">
+          <RelatedMoviesPanel movies={relatedMovies} />
+          <div className="episode-list">
+            <h2>Danh sách tập</h2>
+            <div className="episode-server-groups">
+              {episodeServers.map((server) => (
+                <section className="episode-server" key={server.server_name}>
+                  <h3>{cleanServerName(server.server_name)}</h3>
+                  <div>
+                    {newestEpisodesFirst(server.server_data).map((episode) => (
+                      <Link key={`${server.server_name}-${episode.slug}-${episode.link_embed}`} to={`/xem-phim/${movie.slug}?episode=${episode.slug}`}>
+                        {displayText(episode.name)}
+                      </Link>
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          </div>
         </div>
-      </motion.div>
-    </motion.section>
+      </motion.section>
+    </>
   );
 }
 
@@ -1008,14 +1285,6 @@ function WatchPage() {
           <h1>{displayText(movie.name)}</h1>
           <p>{displayText(active.name)}</p>
         </div>
-        <div className="episode-nav">
-          <button disabled={!previousEpisode} onClick={() => previousEpisode && selectEpisode(previousEpisode)} type="button">
-            <ArrowLeft size={17} /> Tập trước
-          </button>
-          <button disabled={!nextEpisode} onClick={() => nextEpisode && selectEpisode(nextEpisode)} type="button">
-            Tập tiếp theo <Play size={17} fill="currentColor" />
-          </button>
-        </div>
       </div>
 
       <div className="watch-stage">
@@ -1036,7 +1305,14 @@ function WatchPage() {
               </a>
             </div>
           ) : (
-            <HlsVideoPlayer episode={active} title={`${displayText(movie.name)} - ${displayText(active.name)}`} />
+            <HlsVideoPlayer
+              episode={active}
+              title={`${displayText(movie.name)} - ${displayText(active.name)}`}
+              hasNextEpisode={Boolean(nextEpisode)}
+              hasPreviousEpisode={Boolean(previousEpisode)}
+              onNextEpisode={() => nextEpisode && selectEpisode(nextEpisode)}
+              onPreviousEpisode={() => previousEpisode && selectEpisode(previousEpisode)}
+            />
           )}
         </motion.div>
 
