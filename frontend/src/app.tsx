@@ -376,6 +376,7 @@ function Hero({ movies, selected, onSelect }: { movies: Movie[]; selected: Movie
 
   return (
     <section className="hero">
+      <div className="project-notice">Đây là đồ án giúp em qua môn nên mong cơ quan nhà nước đừng phạt em :&gt;</div>
       <motion.div
         className="hero-backdrop"
         key={selected.slug}

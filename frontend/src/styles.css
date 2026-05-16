@@ -227,6 +227,25 @@ a {
   padding: clamp(22px, 4.2vw, 44px);
 }
 
+.project-notice {
+  position: absolute;
+  top: 16px;
+  left: 18px;
+  right: 18px;
+  z-index: 2;
+  width: fit-content;
+  max-width: calc(100% - 36px);
+  padding: 8px 12px;
+  border: 1px solid rgba(214, 226, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(2, 6, 23, 0.52);
+  color: #dbeafe;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.35;
+  backdrop-filter: blur(14px);
+}
+
 .hero-copy h1 {
   margin: 0;
   max-width: 500px;
@@ -2715,24 +2734,31 @@ iframe {
   }
 
   .hero {
-    min-height: 500px;
+    min-height: 0;
     grid-template-columns: 1fr;
+    align-content: end;
   }
 
   .hero-copy {
     align-self: end;
     max-width: none;
-    padding: 28px 22px 128px;
+    padding: 64px 22px 18px;
   }
 
   .spotlight-stack {
-    right: 0;
-    bottom: 0;
-    left: 0;
+    position: relative;
+    z-index: 2;
+    align-self: end;
     display: flex;
     overflow-x: auto;
     width: 100%;
+    gap: 12px;
     padding: 0 18px 20px;
+    scrollbar-width: none;
+  }
+
+  .spotlight-stack::-webkit-scrollbar {
+    display: none;
   }
 
   .poster-button {
@@ -2799,16 +2825,34 @@ iframe {
   }
 
   .hero {
-    min-height: 460px;
+    min-height: 0;
     border-radius: 16px;
   }
 
   .hero-copy {
-    padding: 22px 18px 112px;
+    padding: 68px 18px 14px;
+  }
+
+  .project-notice {
+    top: 14px;
+    left: 14px;
+    right: 14px;
+    max-width: calc(100% - 28px);
+    border-radius: 12px;
+    font-size: 11px;
   }
 
   .hero-copy h1 {
     font-size: clamp(32px, 11vw, 44px);
+  }
+
+  .hero-meta {
+    gap: 8px;
+  }
+
+  .hero-meta span {
+    min-height: 32px;
+    padding-inline: 10px;
   }
 
   .actions,
@@ -2878,7 +2922,30 @@ iframe {
   }
 
   .player-controls {
-    padding: 32px 10px 10px;
+    gap: 7px;
+    padding: 28px 10px 10px;
+  }
+
+  .player-control-row {
+    gap: 8px;
+  }
+
+  .player-left-controls {
+    display: grid;
+    grid-template-columns: 44px 54px 54px minmax(0, 1fr) minmax(0, 1fr);
+    gap: 7px;
+  }
+
+  .player-left-controls > button,
+  .player-right-controls > button {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .player-right-controls {
+    display: grid;
+    grid-template-columns: 44px minmax(86px, 1fr) 44px;
+    gap: 7px;
   }
 
   .player-controls button {
@@ -2887,18 +2954,27 @@ iframe {
     padding-inline: 8px;
   }
 
-  .player-episode-button {
-    flex: 1 1 118px;
+  .player-controls .player-episode-button {
+    min-width: 0;
+    padding-inline: 6px;
+    font-size: 0;
+    gap: 0;
+  }
+
+  .player-controls .player-episode-button svg {
+    width: 17px;
+    height: 17px;
   }
 
   .player-time {
     order: 10;
+    grid-column: 1 / -1;
     width: 100%;
     min-width: 0;
   }
 
   .player-volume {
-    max-width: 76px;
+    max-width: none;
   }
 }
 
@@ -2924,6 +3000,37 @@ iframe {
   .movie-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px 10px;
+  }
+
+  .hero-copy h1 {
+    font-size: clamp(30px, 12vw, 40px);
+  }
+
+  .spotlight-stack {
+    padding-inline: 14px;
+  }
+
+  .poster-button {
+    flex-basis: 64px;
+    width: 64px;
+  }
+
+  .player-left-controls {
+    grid-template-columns: 40px 48px 48px 44px 44px;
+  }
+
+  .player-controls .player-episode-button {
+    font-size: 0;
+    gap: 0;
+  }
+
+  .player-controls .player-episode-button svg {
+    width: 17px;
+    height: 17px;
+  }
+
+  .player-right-controls {
+    grid-template-columns: 40px minmax(70px, 1fr) 40px;
   }
 
   .episode-badge {
