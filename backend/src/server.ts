@@ -870,6 +870,10 @@ app.get("/api/*", async (request, response) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`Backend proxy listening on http://localhost:${port}`);
-});
+export default app;
+
+if (!process.env.VERCEL) {
+  app.listen(port, () => {
+    console.log(`Backend proxy listening on http://localhost:${port}`);
+  });
+}
