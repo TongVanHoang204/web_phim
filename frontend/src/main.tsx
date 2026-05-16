@@ -1,0 +1,16 @@
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import { BrowserRouter } from "react-router-dom";
+import App from "./app";
+import "./styles.css";
+import tsverseBackground from "./assets/tsverse-background.png";
+
+document.documentElement.style.setProperty("--tsverse-bg-image", `url("${tsverseBackground}")`);
+
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <BrowserRouter>
+      <App />
+    </BrowserRouter>
+  </StrictMode>,
+);

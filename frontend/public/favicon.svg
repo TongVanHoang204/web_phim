@@ -1,0 +1,19 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="g" x1="18" y1="18" x2="112" y2="112" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#19d8ff"/>
+      <stop offset=".48" stop-color="#3478ff"/>
+      <stop offset="1" stop-color="#f153ff"/>
+    </linearGradient>
+    <filter id="glow" x="-25%" y="-25%" width="150%" height="150%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="#050711"/>
+  <path d="M28 93c-18-18-19-47-3-67 18-23 52-25 73-3 22 22 21 56-1 75" stroke="url(#g)" stroke-width="8" stroke-linecap="round" filter="url(#glow)"/>
+  <path d="M50 35 91 64 50 93V35Z" fill="#f8fbff" stroke="url(#g)" stroke-width="7" stroke-linejoin="round" filter="url(#glow)"/>
+</svg>
