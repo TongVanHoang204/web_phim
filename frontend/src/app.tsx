@@ -375,57 +375,59 @@ function Hero({ movies, selected, onSelect }: { movies: Movie[]; selected: Movie
   const spotlight = movies.slice(0, 4);
 
   return (
-    <section className="hero">
+    <>
       <div className="project-notice">Đây là đồ án giúp em qua môn nên mong cơ quan nhà nước đừng phạt em :&gt;</div>
-      <motion.div
-        className="hero-backdrop"
-        key={selected.slug}
-        initial={{ opacity: 0.3, scale: 1.04 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.7 }}
-        style={{ backgroundImage: `url(${backdrop(selected)})` }}
-      />
-      <div className="hero-shade" />
+      <section className="hero">
+        <motion.div
+          className="hero-backdrop"
+          key={selected.slug}
+          initial={{ opacity: 0.3, scale: 1.04 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.7 }}
+          style={{ backgroundImage: `url(${backdrop(selected)})` }}
+        />
+        <div className="hero-shade" />
 
-      <motion.div
-        className="hero-copy"
-        initial={{ y: 18, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.55 }}
-      >
-        <h1>{displayText(selected.name)}</h1>
-        <p>{displayText(selected.origin_name) || "Kho phim trực tuyến cập nhật nhanh với giao diện hiện đại."}</p>
-        <div className="hero-meta">
-          <span>
-            <Star size={16} fill="currentColor" /> {rating(selected)}
-          </span>
-          <span>{selected.year || "Đang cập nhật"}</span>
-          <span>{movieKind(selected)}</span>
-        </div>
-        <div className="actions">
-          <Link className="primary-button" to={`/xem-phim/${selected.slug}`}>
-            <Play size={18} fill="currentColor" /> Xem ngay
-          </Link>
-          <Link className="ghost-button" to={`/phim/${selected.slug}`}>
-            <Info size={18} /> Chi tiết
-          </Link>
-        </div>
-      </motion.div>
+        <motion.div
+          className="hero-copy"
+          initial={{ y: 18, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ duration: 0.55 }}
+        >
+          <h1>{displayText(selected.name)}</h1>
+          <p>{displayText(selected.origin_name) || "Kho phim trực tuyến cập nhật nhanh với giao diện hiện đại."}</p>
+          <div className="hero-meta">
+            <span>
+              <Star size={16} fill="currentColor" /> {rating(selected)}
+            </span>
+            <span>{selected.year || "Đang cập nhật"}</span>
+            <span>{movieKind(selected)}</span>
+          </div>
+          <div className="actions">
+            <Link className="primary-button" to={`/xem-phim/${selected.slug}`}>
+              <Play size={18} fill="currentColor" /> Xem ngay
+            </Link>
+            <Link className="ghost-button" to={`/phim/${selected.slug}`}>
+              <Info size={18} /> Chi tiết
+            </Link>
+          </div>
+        </motion.div>
 
-      <div className="spotlight-stack" aria-label="Phim nổi bật">
-        {spotlight.map((movie) => (
-          <button
-            className={movie.slug === selected.slug ? "poster-button selected" : "poster-button"}
-            key={movie.slug}
-            onClick={() => onSelect(movie)}
-            type="button"
-            title={displayText(movie.name)}
-          >
-            <img src={poster(movie)} alt={displayText(movie.name)} />
-          </button>
-        ))}
-      </div>
-    </section>
+        <div className="spotlight-stack" aria-label="Phim nổi bật">
+          {spotlight.map((movie) => (
+            <button
+              className={movie.slug === selected.slug ? "poster-button selected" : "poster-button"}
+              key={movie.slug}
+              onClick={() => onSelect(movie)}
+              type="button"
+              title={displayText(movie.name)}
+            >
+              <img src={poster(movie)} alt={displayText(movie.name)} />
+            </button>
+          ))}
+        </div>
+      </section>
+    </>
   );
 }
 

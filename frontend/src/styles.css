@@ -228,13 +228,9 @@ a {
 }
 
 .project-notice {
-  position: absolute;
-  top: 16px;
-  left: 18px;
-  right: 18px;
-  z-index: 2;
   width: fit-content;
-  max-width: calc(100% - 36px);
+  max-width: 100%;
+  margin: 0 0 12px;
   padding: 8px 12px;
   border: 1px solid rgba(214, 226, 255, 0.16);
   border-radius: 999px;
@@ -2742,7 +2738,7 @@ iframe {
   .hero-copy {
     align-self: end;
     max-width: none;
-    padding: 64px 22px 18px;
+    padding: 28px 22px 18px;
   }
 
   .spotlight-stack {
@@ -2830,14 +2826,11 @@ iframe {
   }
 
   .hero-copy {
-    padding: 68px 18px 14px;
+    padding: 22px 18px 14px;
   }
 
   .project-notice {
-    top: 14px;
-    left: 14px;
-    right: 14px;
-    max-width: calc(100% - 28px);
+    max-width: 100%;
     border-radius: 12px;
     font-size: 11px;
   }
