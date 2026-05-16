@@ -721,7 +721,7 @@ function HlsVideoPlayer({
   onPreviousEpisode: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const hideControlsTimer = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const hideControlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [hlsError, setHlsError] = useState("");
   const [controlsVisible, setControlsVisible] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
@@ -732,7 +732,7 @@ function HlsVideoPlayer({
 
   function clearHideControlsTimer() {
     if (hideControlsTimer.current) {
-      window.clearTimeout(hideControlsTimer.current);
+      clearTimeout(hideControlsTimer.current);
       hideControlsTimer.current = null;
     }
   }
@@ -743,7 +743,7 @@ function HlsVideoPlayer({
     setControlsVisible(true);
 
     if (force || !video || video.paused) return;
-    hideControlsTimer.current = window.setTimeout(() => {
+    hideControlsTimer.current = setTimeout(() => {
       setControlsVisible(false);
     }, 2400);
   }
