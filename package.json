@@ -2,11 +2,15 @@
   "name": "web-phim",
   "private": true,
   "version": "0.1.0",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
   "scripts": {
-    "dev": "concurrently -n backend,frontend -c cyan,magenta \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
-    "build": "npm --prefix backend run build && npm --prefix frontend run build",
-    "dev:backend": "npm --prefix backend run dev",
-    "dev:frontend": "npm --prefix frontend run dev"
+    "dev": "concurrently -n backend,frontend -c cyan,magenta \"npm --workspace vsmov-backend run dev\" \"npm --workspace vsmov-frontend run dev\"",
+    "build": "npm --workspace vsmov-backend run build && npm --workspace vsmov-frontend run build",
+    "dev:backend": "npm --workspace vsmov-backend run dev",
+    "dev:frontend": "npm --workspace vsmov-frontend run dev"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"
