@@ -12,7 +12,7 @@ export type WatchHistoryPayload = {
 };
 
 const client = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || "/api",
+  baseURL: import.meta.env.VITE_PHIMAPI_BASE_URL || "https://phimapi.com",
   timeout: 60000,
 });
 
@@ -62,21 +62,8 @@ export async function getLatestMovies(page = 1) {
 }
 
 export async function getMovies(params: Record<string, string | number | undefined>) {
-  if (params.type === "china") {
-    const { data } = await client.get<MovieResponse>("/hh3d/phim-moi-cap-nhat", {
-      params: {
-        page: params.page || 1,
-        limit: params.limit || 24,
-      },
-    });
-
-    return {
-      items: unwrapItems<Movie>(data).map((movie) => normalizeMovie(movie)),
-      pagination: data.pagination || data.data?.params?.pagination || data.params?.pagination,
-    };
-  }
-
   const countryMap: Record<string, string | undefined> = {
+    china: "trung-quoc",
     japan: "nhat-ban",
   };
   const country = typeof params.type === "string" ? countryMap[params.type] : undefined;
@@ -102,25 +89,11 @@ export async function getMovies(params: Record<string, string | number | undefin
 }
 
 export async function getMoviesByCategory(slug: string, params: Record<string, string | number | undefined> = {}) {
-  if (params.type === "china") {
-    const { data } = await client.get<MovieResponse>(`/hh3d/the-loai/${slug}`, {
-      params: {
-        page: params.page || 1,
-        limit: params.limit || 24,
-      },
-    });
-
-    return {
-      items: unwrapItems<Movie>(data).map((movie) => normalizeMovie(movie)),
-      pagination: data.pagination || data.data?.params?.pagination || data.params?.pagination,
-    };
-  }
-
   const { data } = await client.get<MovieResponse>(`/v1/api/the-loai/${slug}`, {
     params: {
       page: params.page || 1,
       limit: params.limit || 24,
-      country: params.type === "japan" ? "nhat-ban" : undefined,
+      country: params.type === "japan" ? "nhat-ban" : params.type === "china" ? "trung-quoc" : undefined,
       sort_field: "modified.time",
       sort_type: "desc",
       sort_lang: "vietsub",
@@ -224,8 +197,7 @@ export async function searchMovies(keyword: string) {
 }
 
 export async function getCategories(type: string = "all") {
-  const endpoint = type === "china" ? "/hh3d/the-loai" : "/the-loai";
-  const { data } = await client.get<MovieResponse | Taxonomy[]>(endpoint);
+  const { data } = await client.get<MovieResponse | Taxonomy[]>("/the-loai");
   return unwrapItems<Taxonomy>(data).filter((item) => !isBlockedTaxonomy(item));
 }
 
@@ -235,19 +207,8 @@ export async function getCountries() {
 }
 
 export async function getMovieDetail(slug: string) {
-  let data: MovieDetailResponse;
-
-  try {
-    ({ data } = await client.get<MovieDetailResponse>(`/phim/${slug}`));
-  } catch {
-    ({ data } = await client.get<MovieDetailResponse>(`/hh3d/phim/${slug}`));
-  }
-
+  const { data } = await client.get<MovieDetailResponse>(`/phim/${slug}`);
   let movie = data.movie || data.data?.movie;
-  if (!movie) {
-    ({ data } = await client.get<MovieDetailResponse>(`/hh3d/phim/${slug}`));
-    movie = data.movie || data.data?.movie;
-  }
 
   return {
     movie: movie ? normalizeMovie(movie) : undefined,
@@ -256,11 +217,17 @@ export async function getMovieDetail(slug: string) {
 }
 
 export async function getWatchHistory() {
-  const { data } = await client.get<{ items?: WatchHistoryPayload[] }>("/watch-history");
-  return data.items || [];
+  try {
+    return JSON.parse(localStorage.getItem("watchHistory") || "[]") as WatchHistoryPayload[];
+  } catch {
+    return [];
+  }
 }
 
 export async function saveWatchHistoryEntry(item: WatchHistoryPayload) {
-  const { data } = await client.post<{ items?: WatchHistoryPayload[] }>("/watch-history", item);
-  return data.items || [];
+  try {
+    return JSON.parse(localStorage.getItem("watchHistory") || "[]") as WatchHistoryPayload[];
+  } catch {
+    return [item];
+  }
 }
