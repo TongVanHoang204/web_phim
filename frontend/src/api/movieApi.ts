@@ -15,11 +15,17 @@ const client = axios.create({
   baseURL: import.meta.env.VITE_PHIMAPI_BASE_URL || "https://phimapi.com",
   timeout: 60000,
 });
+const localClient = axios.create({
+  baseURL: "",
+  timeout: 60000,
+});
 
 const DEFAULT_IMAGE_CDN = import.meta.env.VITE_IMAGE_CDN_BASE_URL || "https://phimimg.com";
 const ALLOWED_ANIMATION_COUNTRIES = new Set(["trung-quoc", "nhat-ban"]);
 const BLOCKED_TAXONOMY_SLUGS = new Set(["phim-18", "phim-18+", "18", "18-plus", "mien-tay", "tre-em"]);
 const BLOCKED_TAXONOMY_NAMES = ["18+", "Miền Tây", "Trẻ Em"];
+
+type CategorySource = NonNullable<Taxonomy["source"]>;
 
 function absoluteImageUrl(url?: string, cdn = DEFAULT_IMAGE_CDN) {
   if (!url) return url;
@@ -43,6 +49,35 @@ function unwrapItems<T>(payload: MovieResponse | T[]): T[] {
   return [];
 }
 
+function categorySlug(source: CategorySource, slug: string) {
+  return source === "phimapi" ? slug : `${source}:${slug}`;
+}
+
+function categoryFromSource(item: Taxonomy, source: CategorySource): Taxonomy {
+  return {
+    ...item,
+    source,
+    slug: categorySlug(source, item.slug),
+  };
+}
+
+function parseCategorySlug(slug: string): { source: CategorySource; slug: string } {
+  const [source, ...rest] = slug.split(":");
+  if ((source === "hh3d" || source === "hhpanda") && rest.length) {
+    return { source, slug: rest.join(":") };
+  }
+  return { source: "phimapi", slug };
+}
+
+function movieFromSource(movie: Movie, source: CategorySource) {
+  const normalized = normalizeMovie(movie);
+  return {
+    ...normalized,
+    source,
+    slug: source === "phimapi" ? normalized.slug : `${source}:${normalized.slug}`,
+  };
+}
+
 function isAnimeOrDonghua(movie: Movie) {
   const hasAnimationType = movie.type === "hoathinh";
   const hasAnimationCategory = movie.category?.some((item) => item.slug === "hoat-hinh");
@@ -59,6 +94,22 @@ function isBlockedTaxonomy(item: Taxonomy) {
 
 export async function getLatestMovies(page = 1) {
   return getMovies({ type: "all", page, limit: 40 });
+}
+
+export async function getTopViewedMovies(limit = 9) {
+  const { data } = await client.get<MovieResponse>("/v1/api/danh-sach/hoat-hinh", {
+    params: {
+      page: 1,
+      limit,
+      sort_field: "view",
+      sort_type: "desc",
+      sort_lang: "vietsub",
+    },
+  });
+  const cdn = data.data?.APP_DOMAIN_CDN_IMAGE || DEFAULT_IMAGE_CDN;
+  return unwrapItems<Movie>(data)
+    .map((movie) => normalizeMovie(movie, cdn))
+    .filter(isAnimeOrDonghua);
 }
 
 export async function getMovies(params: Record<string, string | number | undefined>) {
@@ -89,6 +140,22 @@ export async function getMovies(params: Record<string, string | number | undefin
 }
 
 export async function getMoviesByCategory(slug: string, params: Record<string, string | number | undefined> = {}) {
+  const category = parseCategorySlug(slug);
+
+  if (category.source === "hh3d" || category.source === "hhpanda") {
+    const { data } = await localClient.get<MovieResponse>(`/api/${category.source}/the-loai/${category.slug}`, {
+      params: {
+        page: params.page || 1,
+        limit: params.limit || 24,
+      },
+    });
+
+    return {
+      items: unwrapItems<Movie>(data).map((movie) => movieFromSource(movie, category.source)),
+      pagination: data.pagination || data.data?.params?.pagination || data.params?.pagination,
+    };
+  }
+
   const { data } = await client.get<MovieResponse>(`/v1/api/the-loai/${slug}`, {
     params: {
       page: params.page || 1,
@@ -197,8 +264,19 @@ export async function searchMovies(keyword: string) {
 }
 
 export async function getCategories(type: string = "all") {
-  const { data } = await client.get<MovieResponse | Taxonomy[]>("/the-loai");
-  return unwrapItems<Taxonomy>(data).filter((item) => !isBlockedTaxonomy(item));
+  const sources: Array<{ source: CategorySource; path: string }> = [
+    { source: "hh3d", path: "/api/hh3d/the-loai" },
+    { source: "hhpanda", path: "/api/hhpanda/the-loai" },
+  ];
+  const results = await Promise.allSettled(sources.map((source) => localClient.get<MovieResponse | Taxonomy[]>(source.path)));
+
+  return results.flatMap((result, index) => {
+    if (result.status !== "fulfilled") return [];
+    const source = sources[index].source;
+    return unwrapItems<Taxonomy>(result.value.data)
+      .filter((item) => !isBlockedTaxonomy(item))
+      .map((item) => categoryFromSource(item, source));
+  });
 }
 
 export async function getCountries() {
@@ -207,6 +285,18 @@ export async function getCountries() {
 }
 
 export async function getMovieDetail(slug: string) {
+  const sourceMovie = parseCategorySlug(slug);
+
+  if (sourceMovie.source === "hh3d" || sourceMovie.source === "hhpanda") {
+    const { data } = await localClient.get<MovieDetailResponse>(`/api/${sourceMovie.source}/phim/${sourceMovie.slug}`);
+    const movie = data.movie || data.data?.movie;
+
+    return {
+      movie: movie ? movieFromSource(movie, sourceMovie.source) : undefined,
+      episodes: data.episodes || data.data?.episodes || [],
+    };
+  }
+
   const { data } = await client.get<MovieDetailResponse>(`/phim/${slug}`);
   let movie = data.movie || data.data?.movie;
 

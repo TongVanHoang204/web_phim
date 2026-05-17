@@ -30,6 +30,7 @@ import {
   getMovieDetail,
   getMovies,
   getMoviesByCategory,
+  getTopViewedMovies,
   getWatchHistory,
   getRelatedMovies,
   saveWatchHistoryEntry,
@@ -219,6 +220,7 @@ function saveWatchHistory(movie: Movie, episode: EpisodeItem) {
 
 function useHomeData(initialFilter: HeaderFilter) {
   const [movies, setMovies] = useState<Movie[]>([]);
+  const [topViewed, setTopViewed] = useState<Movie[]>([]);
   const [categories, setCategories] = useState<Taxonomy[]>([]);
   const [countries, setCountries] = useState<Taxonomy[]>([]);
   const [pagination, setPagination] = useState<PaginationInfo>(DEFAULT_PAGINATION);
@@ -232,20 +234,23 @@ function useHomeData(initialFilter: HeaderFilter) {
       setLoading(true);
       setError("");
       try {
-        const [latest, categoryItems, countryItems] = await Promise.all([
+        const [latest, topItems, categoryItems, countryItems] = await Promise.all([
           initialFilter === "all" ? getLatestMovies() : getMovies({ type: initialFilter, page: 1, limit: HOME_MOVIE_FETCH_LIMIT }),
+          getTopViewedMovies(),
           getCategories(initialFilter),
           getCountries(),
         ]);
 
         if (!mounted) return;
         setMovies(latest.items.length ? latest.items : fallbackMovies);
+        setTopViewed(topItems.length ? topItems : latest.items.slice(0, 9));
         setPagination(latest.pagination || DEFAULT_PAGINATION);
         setCategories(categoryItems.length ? categoryItems.slice(0, 14) : fallbackCategories);
         setCountries(countryItems.length ? countryItems.slice(0, 10) : fallbackCountries);
       } catch (err) {
         if (!mounted) return;
         setMovies(fallbackMovies);
+        setTopViewed(fallbackMovies);
         setPagination(DEFAULT_PAGINATION);
         setCategories(fallbackCategories);
         setCountries(fallbackCountries);
@@ -261,7 +266,7 @@ function useHomeData(initialFilter: HeaderFilter) {
     };
   }, [initialFilter]);
 
-  return { movies, categories, countries, pagination, loading, error, setMovies, setPagination, setError };
+  return { movies, topViewed, categories, countries, pagination, loading, error, setMovies, setPagination, setError };
 }
 
 function Header({
@@ -802,7 +807,34 @@ function HlsVideoPlayer({
       await document.exitFullscreen().catch(() => undefined);
       return;
     }
-    await frame.requestFullscreen().catch(() => undefined);
+
+    const fullscreenFrame = frame as HTMLElement & {
+      webkitRequestFullscreen?: () => Promise<void> | void;
+      msRequestFullscreen?: () => Promise<void> | void;
+    };
+    const fullscreenVideo = video as HTMLVideoElement & {
+      webkitEnterFullscreen?: () => void;
+      webkitSupportsFullscreen?: boolean;
+    };
+
+    if (frame.requestFullscreen) {
+      await frame.requestFullscreen().catch(() => undefined);
+      return;
+    }
+
+    if (fullscreenFrame.webkitRequestFullscreen) {
+      await Promise.resolve(fullscreenFrame.webkitRequestFullscreen()).catch(() => undefined);
+      return;
+    }
+
+    if (fullscreenFrame.msRequestFullscreen) {
+      await Promise.resolve(fullscreenFrame.msRequestFullscreen()).catch(() => undefined);
+      return;
+    }
+
+    if (fullscreenVideo.webkitSupportsFullscreen && fullscreenVideo.webkitEnterFullscreen) {
+      fullscreenVideo.webkitEnterFullscreen();
+    }
   }
 
   useEffect(() => {
@@ -1361,7 +1393,7 @@ function WatchPage() {
 }
 
 function HomePage({ initialFilter = "all" }: { initialFilter?: HeaderFilter }) {
-  const { movies, categories, loading, error, pagination, setMovies, setPagination, setError } = useHomeData(initialFilter);
+  const { movies, topViewed, categories, loading, error, pagination, setMovies, setPagination, setError } = useHomeData(initialFilter);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Movie | null>(null);
   const [filter, setFilter] = useState<HeaderFilter>(initialFilter);
@@ -1372,7 +1404,6 @@ function HomePage({ initialFilter = "all" }: { initialFilter?: HeaderFilter }) {
 
   const activeMovie = selected || movies[0] || fallbackMovies[0];
   const featured = useMemo(() => movies.slice(0, HOME_MOVIE_DISPLAY_LIMIT), [movies]);
-  const trending = useMemo(() => movies.slice(0, 9), [movies]);
 
   useEffect(() => {
     if (movies.length && (!selected || !movies.some((movie) => movie.slug === selected.slug))) {
@@ -1524,7 +1555,7 @@ function HomePage({ initialFilter = "all" }: { initialFilter?: HeaderFilter }) {
                 <PaginationControls pagination={pagination} busy={busy} onPageChange={handlePageChange} />
               </div>
 
-              <SideRail trending={trending} history={historyItems} />
+              <SideRail trending={topViewed} history={historyItems} />
             </div>
           </>
         )}

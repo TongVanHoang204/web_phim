@@ -760,6 +760,38 @@ app.get("/api/hhpanda/the-loai", async (_request, response) => {
   }
 });
 
+app.get("/api/hhpanda/the-loai/:slug", async (request, response) => {
+  const page = Number(request.query.page || 1);
+
+  try {
+    const categoryResult = await fetchHhpandaJson<HhpandaTerm[]>("/wp-json/wp/v2/categories", {
+      slug: request.params.slug,
+      per_page: 1,
+    });
+    const category = categoryResult.data[0];
+
+    if (!category) {
+      response.status(404).json({ status: false, message: "Không tìm thấy thể loại trên HHPANDA" });
+      return;
+    }
+
+    const result = await fetchHhpandaJson<HhpandaPost[]>("/wp-json/wp/v2/posts", {
+      page,
+      per_page: Number(request.query.limit || 24),
+      categories: category.id,
+      _embed: 1,
+    });
+
+    response.json(hhpandaListResponse(result.data, page, result.total, result.totalPages));
+  } catch (error) {
+    response.status(502).json({
+      status: false,
+      message: "Cannot load HHPANDA category",
+      detail: errorDetail(error),
+    });
+  }
+});
+
 app.get("/api/hhpanda/quoc-gia", async (_request, response) => {
   try {
     const result = await fetchHhpandaJson<HhpandaTerm[]>("/wp-json/wp/v2/country", {

@@ -2910,23 +2910,32 @@ iframe {
   }
 
   .player-center-play {
-    width: 62px;
-    height: 62px;
+    width: 50px;
+    height: 50px;
   }
 
   .player-controls {
-    gap: 7px;
-    padding: 28px 10px 10px;
+    gap: 4px;
+    padding: 8px 8px 7px;
+    background: linear-gradient(180deg, transparent, rgba(2, 6, 23, 0.72) 42%, rgba(2, 6, 23, 0.94));
+  }
+
+  .player-seek {
+    height: 12px;
   }
 
   .player-control-row {
-    gap: 8px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 5px;
   }
 
   .player-left-controls {
     display: grid;
-    grid-template-columns: 44px 54px 54px minmax(0, 1fr) minmax(0, 1fr);
-    gap: 7px;
+    grid-template-columns: 36px 44px 44px minmax(54px, 1fr);
+    gap: 5px;
+    width: auto;
   }
 
   .player-left-controls > button,
@@ -2937,37 +2946,37 @@ iframe {
 
   .player-right-controls {
     display: grid;
-    grid-template-columns: 44px minmax(86px, 1fr) 44px;
-    gap: 7px;
+    grid-template-columns: 34px 62px 34px;
+    gap: 5px;
+    width: auto;
   }
 
   .player-controls button {
-    min-width: 32px;
-    height: 32px;
-    padding-inline: 8px;
+    min-width: 0;
+    height: 28px;
+    padding-inline: 5px;
+    border-radius: 8px;
+    font-size: 11px;
   }
 
   .player-controls .player-episode-button {
-    min-width: 0;
-    padding-inline: 6px;
-    font-size: 0;
-    gap: 0;
-  }
-
-  .player-controls .player-episode-button svg {
-    width: 17px;
-    height: 17px;
+    display: none;
   }
 
   .player-time {
-    order: 10;
-    grid-column: 1 / -1;
+    align-self: center;
+    order: initial;
+    grid-column: auto;
     width: 100%;
     min-width: 0;
+    font-size: 10px;
+    text-align: right;
   }
 
   .player-volume {
     max-width: none;
+    min-width: 0;
+    height: 12px;
   }
 }
 
@@ -3009,21 +3018,24 @@ iframe {
   }
 
   .player-left-controls {
-    grid-template-columns: 40px 48px 48px 44px 44px;
+    grid-template-columns: 34px 42px 42px minmax(48px, 1fr);
   }
 
   .player-controls .player-episode-button {
-    font-size: 0;
-    gap: 0;
-  }
-
-  .player-controls .player-episode-button svg {
-    width: 17px;
-    height: 17px;
+    display: none;
   }
 
   .player-right-controls {
-    grid-template-columns: 40px minmax(70px, 1fr) 40px;
+    grid-template-columns: 32px 54px 32px;
+  }
+
+  .player-controls button {
+    height: 27px;
+    padding-inline: 4px;
+  }
+
+  .player-time {
+    font-size: 9px;
   }
 
   .episode-badge {
