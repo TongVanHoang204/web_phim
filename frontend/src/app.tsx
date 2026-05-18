@@ -1029,7 +1029,7 @@ function HlsVideoPlayer({
       <button className="player-center-play" onClick={togglePlayback} type="button" aria-label={paused ? "Phát phim" : "Tạm dừng"}>
         {paused ? <Play size={40} fill="currentColor" /> : <Pause size={40} fill="currentColor" />}
       </button>
-      <div className="player-controls" onMouseMove={() => showControlsTemporarily(true)}>
+      <div className="player-controls" onMouseMove={() => showControlsTemporarily()}>
         <input
           aria-label="Tua phim"
           className="player-seek"

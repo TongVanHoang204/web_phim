@@ -77,11 +77,16 @@ function isBlockedTaxonomy(item: Taxonomy) {
 }
 
 export async function getLatestMovies(page = 1) {
-  return getMovies({ page, limit: 40 });
+  return getMovies({ page, limit: 40, source: "all" });
 }
 
 function apiSourceFromType(type?: string | number) {
   return type === "japan" ? "animehay" : undefined;
+}
+
+function apiSourceFromParams(params: Record<string, string | number | undefined>) {
+  if (params.source) return params.source;
+  return apiSourceFromType(params.type);
 }
 
 export async function getTopViewedMovies(limit = 9, type?: string) {
@@ -96,7 +101,7 @@ export async function getMovies(params: Record<string, string | number | undefin
     params: {
       page: params.page || 1,
       limit: params.limit || 24,
-      source: apiSourceFromType(params.type),
+      source: apiSourceFromParams(params),
     },
   });
 

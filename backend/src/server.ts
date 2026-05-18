@@ -496,6 +496,11 @@ function requestWantsAnimehay(request: express.Request) {
   return String(request.query.source || "").toLowerCase() === "animehay" || String(request.query.type || "").toLowerCase() === "japan";
 }
 
+function requestWantsAllSources(request: express.Request) {
+  const source = String(request.query.source || "").toLowerCase();
+  return source === "all" || source === "mixed";
+}
+
 function hhkungfuProxyPlayerUrl(postId: string, chapter: string, type: string, sv: string) {
   const url = new URL("/api/hhkungfu/player", clientUrl);
   url.searchParams.set("post_id", postId);
@@ -872,6 +877,7 @@ function normalizeHhkungfuLatestCard(postId: string, card: string) {
     lang: "Vietsub",
     category: [],
     country: [{ _id: 1, name: "Trung Quốc", slug: "trung-quoc" }],
+    source: "hhkungfu",
     source_url: href,
   };
 }
@@ -1057,6 +1063,52 @@ function animehayListResponse(items: ReturnType<typeof parseAnimehayMovies>, htm
     items,
     pagination: parseAnimehayPagination(html, page, items.length),
   };
+}
+
+type LatestMovieItem = {
+  slug: string;
+  source?: string;
+  created?: { time?: string };
+  modified?: { time?: string };
+  [key: string]: unknown;
+};
+
+function datedMovieTime(item: LatestMovieItem) {
+  const time = item.modified?.time || item.created?.time;
+  if (!time) return 0;
+  const value = new Date(time).getTime();
+  return Number.isFinite(value) ? value : 0;
+}
+
+function sourceMovieKey(item: LatestMovieItem) {
+  const normalizedSlug = item.slug.replace(/^animehay-\d+-/i, "");
+  return `${item.source || "hhkungfu"}:${normalizedSlug}`;
+}
+
+function mergeLatestSourceMovies(sources: LatestMovieItem[][], limit: number) {
+  const seen = new Set<string>();
+  const datedItems: LatestMovieItem[] = [];
+  const rankedItems: Array<{ item: LatestMovieItem; rank: number; sourceIndex: number }> = [];
+
+  sources.forEach((items, sourceIndex) => {
+    items.forEach((item, rank) => {
+      const key = sourceMovieKey(item);
+      if (seen.has(key)) return;
+      seen.add(key);
+
+      if (datedMovieTime(item)) {
+        datedItems.push(item);
+        return;
+      }
+
+      rankedItems.push({ item, rank, sourceIndex });
+    });
+  });
+
+  datedItems.sort((left, right) => datedMovieTime(right) - datedMovieTime(left));
+  rankedItems.sort((left, right) => left.rank - right.rank || left.sourceIndex - right.sourceIndex);
+
+  return [...datedItems, ...rankedItems.map(({ item }) => item)].slice(0, limit);
 }
 
 function parseAnimehayCategories(html: string) {
@@ -1557,6 +1609,86 @@ app.get("/api/movies/latest", async (request, response) => {
   const limit = Number(request.query.limit || 24);
 
   try {
+    if (requestWantsAllSources(request)) {
+      const [hhkungfuResult, animehayResult] = await Promise.allSettled([
+        (async () => {
+          let html = await fetchHhkungfuText(hhkungfuLatestPagePath(page));
+          const itemsBySlug = new Map<string, ReturnType<typeof parseHhkungfuLatestMovies>[number]>();
+
+          for (const item of parseHhkungfuLatestMovies(html, limit)) {
+            if (!item) continue;
+            itemsBySlug.set(item.slug, item);
+          }
+
+          let nextPage = page + 1;
+          while (itemsBySlug.size < limit && nextPage <= page + 3) {
+            const nextHtml = await fetchHhkungfuText(hhkungfuLatestPagePath(nextPage));
+            for (const item of parseHhkungfuLatestMovies(nextHtml, limit)) {
+              if (!item) continue;
+              if (!itemsBySlug.has(item.slug)) itemsBySlug.set(item.slug, item);
+              if (itemsBySlug.size >= limit) break;
+            }
+            html = `${html}${nextHtml}`;
+            nextPage += 1;
+          }
+
+          return {
+            items: Array.from(itemsBySlug.values()).slice(0, limit),
+            pagination: parseHhkungfuPagination(html, page, itemsBySlug.size),
+          };
+        })(),
+        (async () => {
+          const html = await fetchAnimehayText(animehayLatestPagePath(page));
+          const items = parseAnimehayMovies(html, limit);
+          return {
+            items,
+            pagination: parseAnimehayPagination(html, page, items.length),
+          };
+        })(),
+      ]);
+
+      const hhkungfuItems: LatestMovieItem[] = [];
+      if (hhkungfuResult.status === "fulfilled") {
+        for (const item of hhkungfuResult.value.items) {
+          if (item?.slug) hhkungfuItems.push(item as LatestMovieItem);
+        }
+      }
+
+      const animehayItems: LatestMovieItem[] = [];
+      if (animehayResult.status === "fulfilled") {
+        for (const item of animehayResult.value.items) {
+          if (item?.slug) animehayItems.push(item as LatestMovieItem);
+        }
+      }
+      const items = mergeLatestSourceMovies([hhkungfuItems, animehayItems], limit);
+      const paginationSources = [hhkungfuResult, animehayResult].filter((result) => result.status === "fulfilled");
+      const totalPages = Math.max(
+        page,
+        ...paginationSources.map((result) => (result as PromiseFulfilledResult<{ pagination: ReturnType<typeof parseHhkungfuPagination> }>).value.pagination.totalPages),
+        1,
+      );
+      const totalItems = paginationSources.reduce((sum, result) => {
+        return sum + (result as PromiseFulfilledResult<{ pagination: ReturnType<typeof parseHhkungfuPagination> }>).value.pagination.totalItems;
+      }, 0);
+
+      response.json({
+        status: true,
+        source: "ALL",
+        items,
+        pagination: {
+          totalItems: totalItems || items.length,
+          totalItemsPerPage: items.length,
+          currentPage: page,
+          totalPages,
+        },
+        partial_errors: [
+          hhkungfuResult.status === "rejected" ? "HHKUNGFU" : "",
+          animehayResult.status === "rejected" ? "ANIMEHAY" : "",
+        ].filter(Boolean),
+      });
+      return;
+    }
+
     if (requestWantsAnimehay(request)) {
       const html = await fetchAnimehayText(animehayLatestPagePath(page));
       response.json(animehayListResponse(parseAnimehayMovies(html, limit), html, page));
