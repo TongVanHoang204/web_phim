@@ -465,8 +465,12 @@ function streamfreeProxyUrl(value: string) {
 }
 
 const streamfreeDetectorGuardJs =
-  '!function(){try{var n=function(){};["clear","table","log","debug","info","warn","error","dir","trace"].forEach(function(k){try{console[k]=n}catch(e){}});var w=function(){return window.innerWidth},h=function(){return window.innerHeight};try{Object.defineProperty(window,"outerWidth",{get:w,configurable:true})}catch(e){}try{Object.defineProperty(window,"outerHeight",{get:h,configurable:true})}catch(e){}}catch(e){}}();';
+  '!function(){try{var n=function(){};["clear","table","log","debug","info","warn","error","dir","trace"].forEach(function(k){try{console[k]=n}catch(e){}});var clean=function(v){return typeof v==="string"?v.replace(/\\bdebugger\\b/g,"void 0"):v};try{var nf=window.Function;window.Function=new Proxy(nf,{apply:function(t,a,r){return Reflect.apply(t,a,Array.prototype.map.call(r,clean))},construct:function(t,r){return Reflect.construct(t,Array.prototype.map.call(r,clean))}})}catch(e){}try{var ne=window.eval;window.eval=function(v){return ne.call(this,clean(v))}}catch(e){}var w=function(){return window.innerWidth},h=function(){return window.innerHeight};try{Object.defineProperty(window,"outerWidth",{get:w,configurable:true})}catch(e){}try{Object.defineProperty(window,"outerHeight",{get:h,configurable:true})}catch(e){}}catch(e){}}();';
 const streamfreeDetectorGuard = '<script src="/streamfree-guard.js"></script>';
+
+function neutralizeDebuggerScript(value: string) {
+  return value.replace(/\bdebugger\b/g, "void 0");
+}
 
 function encodeEpisodeId(postId: string, chapter: string, type: string, sv: string) {
   return Buffer.from(JSON.stringify({ postId, chapter, type, sv }), "utf8").toString("base64url");
@@ -1791,6 +1795,7 @@ async function proxyStreamfreeRequest(request: express.Request, response: expres
         .replace(/<head>/i, `<head><base href="/">${streamfreeDetectorGuard}`)
         .replace(/(src|href)=["']https:\/\/streamfree\.vip\/([^"']+)["']/gi, '$1="/$2"')
         .replace(/https:\/\/streamfree\.vip\//g, "/");
+      html = neutralizeDebuggerScript(html);
       response.setHeader(
         "content-security-policy",
         "default-src 'self' data: blob: https: http:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https: http:; media-src 'self' data: blob: https: http:; connect-src 'self' https: http:; worker-src 'self' blob:; frame-ancestors 'self'",
@@ -1802,6 +1807,7 @@ async function proxyStreamfreeRequest(request: express.Request, response: expres
     if (contentType.includes("javascript") || url.pathname.endsWith(".js")) {
       let script = await result.text();
       script = script.replace(/https:\/\/streamfree\.vip\//g, "/");
+      script = neutralizeDebuggerScript(script);
       response.type(contentType).send(`${streamfreeDetectorGuardJs}\n${script}`);
       return;
     }
