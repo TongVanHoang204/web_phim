@@ -81,6 +81,7 @@ export async function getLatestMovies(page = 1, limit = 24) {
 }
 
 function apiSourceFromType(type?: string | number) {
+  if (type === "all") return "all";
   return type === "japan" ? "animehay" : undefined;
 }
 
@@ -116,7 +117,7 @@ export async function getMoviesByCategory(slug: string, params: Record<string, s
     params: {
       page: params.page || 1,
       limit: params.limit || 24,
-      source: apiSourceFromType(params.type),
+      source: apiSourceFromParams(params),
     },
   });
 

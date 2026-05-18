@@ -259,7 +259,7 @@ function useHomeData(initialFilter: HeaderFilter) {
         setMovies(latest.items.length ? latest.items : fallbackMovies);
         setTopViewed(topItems.length ? topItems : latest.items.slice(0, 9));
         setPagination(latest.pagination || DEFAULT_PAGINATION);
-        setCategories(categoryItems.length ? categoryItems.slice(0, 14) : fallbackCategories);
+        setCategories(categoryItems.length ? categoryItems.slice(0, 28) : fallbackCategories);
         setCountries(countryItems.length ? countryItems.slice(0, 10) : fallbackCountries);
       } catch (err) {
         if (!mounted) return;
@@ -319,7 +319,7 @@ function Header({
                   {item.label}
                 </button>
                 <div className="dropdown-menu">
-                  {menuCategories.slice(0, 14).map((cat) =>
+                  {menuCategories.slice(0, 28).map((cat) =>
                     onCategory ? (
                       <button
                         className={activeCategory === cat.slug ? "selected" : ""}
@@ -1570,16 +1570,16 @@ function HomePage({ initialFilter = "all" }: { initialFilter?: HeaderFilter }) {
   }
 
   async function handleCategoryFilter(category: Taxonomy) {
+    const categoryFilter = category.source === "animehay" ? "japan" : category.source === "hhkungfu" ? "china" : initialFilter;
     setActiveCategory(category.slug);
-    setFilter(initialFilter);
+    setFilter(categoryFilter);
     setBusy(true);
     try {
-      const results = await getMoviesByCategory(category.slug, { type: initialFilter, page: 1, limit: HOME_MOVIE_FETCH_LIMIT });
+      const results = await getMoviesByCategory(category.slug, { type: categoryFilter, source: category.source, page: 1, limit: HOME_MOVIE_FETCH_LIMIT });
       setMovies(results.items);
       setSelected(results.items[0] || null);
       setPagination(results.pagination || DEFAULT_PAGINATION);
       setError(results.items.length ? "" : `Không có phim phù hợp với thể loại ${displayText(category.name)}.`);
-      navigate(initialFilter === "china" ? "/3d" : initialFilter === "japan" ? "/anime" : "/");
     } catch {
       setError(`Không thể tải thể loại ${displayText(category.name)}.`);
     } finally {
@@ -1592,7 +1592,7 @@ function HomePage({ initialFilter = "all" }: { initialFilter?: HeaderFilter }) {
     setBusy(true);
     try {
       const results = activeCategory
-        ? await getMoviesByCategory(activeCategory, { type: initialFilter, page, limit: HOME_MOVIE_FETCH_LIMIT })
+        ? await getMoviesByCategory(activeCategory, { type: filter || initialFilter, page, limit: HOME_MOVIE_FETCH_LIMIT })
         : await getMovies({ type: filter || "all", page, limit: HOME_MOVIE_FETCH_LIMIT });
       setMovies(results.items);
       setSelected(results.items[0] || null);
@@ -1672,7 +1672,7 @@ function App() {
     async function loadHeaderCategories() {
       try {
         const items = await getCategories("all");
-        if (mounted) setHeaderCategories(items.length ? items.slice(0, 14) : fallbackCategories);
+        if (mounted) setHeaderCategories(items.length ? items.slice(0, 28) : fallbackCategories);
       } catch {
         if (mounted) setHeaderCategories(fallbackCategories);
       }

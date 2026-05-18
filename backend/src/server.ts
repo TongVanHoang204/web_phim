@@ -1985,11 +1985,37 @@ app.get("/api/movies/categories", async (request, response) => {
       return;
     }
 
+    if (requestWantsAllSources(request)) {
+      const [hhkungfuResult, animehayResult] = await Promise.allSettled([
+        fetchHhkungfuJson<HhpandaTerm[]>("/wp-json/wp/v2/categories", {
+          per_page: 100,
+        }),
+        fetchAnimehayText("/"),
+      ]);
+
+      const hhkungfuCategories: Array<{ _id: number; name: string; slug: string; source: string }> = [];
+      if (hhkungfuResult.status === "fulfilled") {
+        for (const item of hhkungfuResult.value.data) {
+          hhkungfuCategories.push({ _id: item.id, name: item.name, slug: item.slug, source: "hhkungfu" });
+        }
+      }
+
+      const animehayCategories: Array<{ _id: number; name: string; slug: string; source: string }> = [];
+      if (animehayResult.status === "fulfilled") {
+        for (const item of parseAnimehayCategories(animehayResult.value)) {
+          animehayCategories.push(item);
+        }
+      }
+
+      response.json([...hhkungfuCategories.slice(0, 10), ...animehayCategories, ...hhkungfuCategories.slice(10)]);
+      return;
+    }
+
     const result = await fetchHhkungfuJson<HhpandaTerm[]>("/wp-json/wp/v2/categories", {
       per_page: 100,
     });
 
-    response.json(result.data.map((item) => ({ _id: item.id, name: item.name, slug: item.slug })));
+    response.json(result.data.map((item) => ({ _id: item.id, name: item.name, slug: item.slug, source: "hhkungfu" })));
   } catch (error) {
     response.status(502).json({
       status: false,
