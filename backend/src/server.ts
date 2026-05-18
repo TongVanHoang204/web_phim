@@ -464,6 +464,10 @@ function streamfreeProxyUrl(value: string) {
   return `${url.pathname}${url.search}`;
 }
 
+function rewriteStreamfreeUrls(value: string) {
+  return value.replace(/https:\/\/streamfree\.vip\//g, "/");
+}
+
 const streamfreeDetectorGuardJs =
   '!function(){try{var n=function(){};["clear","table","log","debug","info","warn","error","dir","trace"].forEach(function(k){try{console[k]=n}catch(e){}});var clean=function(v){return typeof v==="string"?v.replace(/\\bdebugger\\b/g,"void 0"):v};try{var nf=window.Function;window.Function=new Proxy(nf,{apply:function(t,a,r){return Reflect.apply(t,a,Array.prototype.map.call(r,clean))},construct:function(t,r){return Reflect.construct(t,Array.prototype.map.call(r,clean))}})}catch(e){}try{var ne=window.eval;window.eval=function(v){return ne.call(this,clean(v))}}catch(e){}var w=function(){return window.innerWidth},h=function(){return window.innerHeight};try{Object.defineProperty(window,"outerWidth",{get:w,configurable:true})}catch(e){}try{Object.defineProperty(window,"outerHeight",{get:h,configurable:true})}catch(e){}}catch(e){}}();';
 const streamfreeDetectorGuard = '<script src="/streamfree-guard.js"></script>';
@@ -1807,7 +1811,7 @@ async function proxyStreamfreeRequest(request: express.Request, response: expres
 
     if (contentType.includes("javascript") || url.pathname.endsWith(".js")) {
       let script = await result.text();
-      script = script.replace(/https:\/\/streamfree\.vip\//g, "/");
+      script = rewriteStreamfreeUrls(script);
       script = neutralizeDebuggerScript(script);
       response.type(contentType).send(`${streamfreeDetectorGuardJs}\n${script}`);
       return;
@@ -1857,7 +1861,7 @@ app.get("/api/hhkungfu/player", async (request, response) => {
   }
 
   try {
-    const playerHtml = await fetchHhkungfuPlayerHtml({ postId, chapter, type, sv });
+    const playerHtml = rewriteStreamfreeUrls(await fetchHhkungfuPlayerHtml({ postId, chapter, type, sv }));
     response
       .type("text/html")
       .send(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;width:100%;height:100%;background:#000;overflow:hidden}iframe{position:fixed;inset:0;display:block;width:100%!important;height:100%!important;border:0}.player-label-mask{position:fixed;top:0;left:0;z-index:2147483647;width:min(340px,55vw);height:64px;pointer-events:none;background:linear-gradient(90deg,#000 0%,#000 70%,rgba(0,0,0,0) 100%)}</style></head><body>${playerHtml}<div class="player-label-mask" aria-hidden="true"></div></body></html>`);
