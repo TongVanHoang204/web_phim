@@ -461,8 +461,12 @@ function streamfreeProxyUrl(value: string) {
   if (!value) return "";
   const url = new URL(value);
   if (url.hostname !== "streamfree.vip") return value;
-  return `/api/streamfree${url.pathname}${url.search}`;
+  return `${url.pathname}${url.search}`;
 }
+
+const streamfreeDetectorGuardJs =
+  '!function(){try{var n=function(){};["clear","table","log","debug","info","warn","error","dir","trace"].forEach(function(k){try{console[k]=n}catch(e){}});var w=function(){return window.innerWidth},h=function(){return window.innerHeight};try{Object.defineProperty(window,"outerWidth",{get:w,configurable:true})}catch(e){}try{Object.defineProperty(window,"outerHeight",{get:h,configurable:true})}catch(e){}}catch(e){}}();';
+const streamfreeDetectorGuard = `<script>${streamfreeDetectorGuardJs}</script>`;
 
 function encodeEpisodeId(postId: string, chapter: string, type: string, sv: string) {
   return Buffer.from(JSON.stringify({ postId, chapter, type, sv }), "utf8").toString("base64url");
@@ -1256,6 +1260,8 @@ app.use(
 );
 app.use("/api", apiLimiter);
 app.use("/api/streamfree", express.raw({ type: "*/*", limit: "2mb" }));
+app.use("/embed", express.raw({ type: "*/*", limit: "2mb" }));
+app.use("/public", express.raw({ type: "*/*", limit: "2mb" }));
 app.use("/cdn-cgi", express.raw({ type: "*/*", limit: "2mb" }));
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "64kb" }));
 app.use(morgan("dev"));
@@ -1782,18 +1788,17 @@ async function proxyStreamfreeRequest(request: express.Request, response: expres
     if (contentType.includes("text/html")) {
       let html = await result.text();
       html = html
-        .replace(/<head>/i, '<head><base href="/api/streamfree/">')
-        .replace(/(src|href)=["']\/(public\/[^"']+)["']/gi, '$1="/api/streamfree/$2"')
-        .replace(/(src|href)=["']https:\/\/streamfree\.vip\/([^"']+)["']/gi, '$1="/api/streamfree/$2"')
-        .replace(/https:\/\/streamfree\.vip\//g, "/api/streamfree/");
+        .replace(/<head>/i, `<head><base href="/">${streamfreeDetectorGuard}`)
+        .replace(/(src|href)=["']https:\/\/streamfree\.vip\/([^"']+)["']/gi, '$1="/$2"')
+        .replace(/https:\/\/streamfree\.vip\//g, "/");
       response.type("text/html").send(html);
       return;
     }
 
     if (contentType.includes("javascript") || url.pathname.endsWith(".js")) {
       let script = await result.text();
-      script = script.replace(/https:\/\/streamfree\.vip\//g, "/api/streamfree/");
-      response.type(contentType).send(script);
+      script = script.replace(/https:\/\/streamfree\.vip\//g, "/");
+      response.type(contentType).send(`${streamfreeDetectorGuardJs}\n${script}`);
       return;
     }
 
@@ -1806,6 +1811,16 @@ async function proxyStreamfreeRequest(request: express.Request, response: expres
 
 app.all("/api/streamfree/*", async (request, response) => {
   const rawPath = ((request.params as unknown as Record<string, string>)[0] || "");
+  await proxyStreamfreeRequest(request, response, rawPath);
+});
+
+app.all("/embed/*", async (request, response) => {
+  const rawPath = `embed/${(request.params as unknown as Record<string, string>)[0] || ""}`;
+  await proxyStreamfreeRequest(request, response, rawPath);
+});
+
+app.all("/public/*", async (request, response) => {
+  const rawPath = `public/${(request.params as unknown as Record<string, string>)[0] || ""}`;
   await proxyStreamfreeRequest(request, response, rawPath);
 });
 

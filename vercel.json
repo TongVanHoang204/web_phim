@@ -13,6 +13,14 @@
       "destination": "/api/index"
     },
     {
+      "source": "/embed/:path*",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/public/:path*",
+      "destination": "/api/index"
+    },
+    {
       "source": "/cdn-cgi/:path*",
       "destination": "/api/index"
     },

@@ -1360,6 +1360,7 @@ function WatchPage() {
   const activeIndex = currentServerEpisodes.findIndex((episode) => episode.link_embed === active.link_embed);
   const previousEpisode = activeIndex > 0 ? currentServerEpisodes[activeIndex - 1] : null;
   const nextEpisode = activeIndex >= 0 && activeIndex < currentServerEpisodes.length - 1 ? currentServerEpisodes[activeIndex + 1] : null;
+  const resolvingEmbed = Boolean(active._id && !active.link_m3u8 && !active.open_external && !resolvedActive);
   const playerEpisode = resolvedActive || active;
 
   function selectEpisode(episode: ReturnType<typeof flattenEpisodes>[number]) {
@@ -1398,7 +1399,12 @@ function WatchPage() {
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.08, duration: 0.42 }}
         >
-          {active.open_external ? (
+          {resolvingEmbed ? (
+            <div className="player-resolving">
+              <Loader2 className="spin" size={28} />
+              Đang tải player...
+            </div>
+          ) : active.open_external ? (
             <div className="external-player">
               <Play size={42} fill="currentColor" />
               <h2>Nguồn này không cho phát trực tiếp</h2>
