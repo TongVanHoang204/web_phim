@@ -30,10 +30,11 @@ export type Movie = {
   director?: string[];
   category?: Taxonomy[];
   country?: Taxonomy[];
-  source?: "phimapi" | "hh3d" | "hhpanda";
+  source?: "hhkungfu" | "animehay";
 };
 
 export type EpisodeItem = {
+  _id?: string;
   name: string;
   slug: string;
   filename?: string;
@@ -51,7 +52,7 @@ export type Taxonomy = {
   _id?: number;
   name: string;
   slug: string;
-  source?: "phimapi" | "hh3d" | "hhpanda";
+  source?: "hhkungfu" | "animehay";
 };
 
 export type MovieResponse = {

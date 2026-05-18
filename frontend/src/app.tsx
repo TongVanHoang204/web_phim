@@ -142,6 +142,19 @@ function backdrop(movie: Movie) {
   return movie.thumb_url || movie.poster_url || "";
 }
 
+function looksLikePosterImage(url?: string) {
+  if (!url) return false;
+  const size = url.match(/-(\d+)x(\d+)\.(?:webp|jpe?g|png)$/i);
+  if (size) return Number(size[2]) > Number(size[1]);
+  return /poster|300x450|2x3/i.test(url);
+}
+
+function heroBackdrop(movie: Movie) {
+  const candidate = movie.thumb_url;
+  if (candidate && candidate !== movie.poster_url && !looksLikePosterImage(candidate)) return candidate;
+  return "";
+}
+
 function movieKind(movie: Movie) {
   const country = displayText(movie.country?.[0]?.name);
   return country === "Trung Quốc" ? "Donghua" : "Anime";
@@ -236,9 +249,9 @@ function useHomeData(initialFilter: HeaderFilter) {
       try {
         const [latest, topItems, categoryItems, countryItems] = await Promise.all([
           initialFilter === "all" ? getLatestMovies() : getMovies({ type: initialFilter, page: 1, limit: HOME_MOVIE_FETCH_LIMIT }),
-          getTopViewedMovies(),
+          getTopViewedMovies(9, initialFilter),
           getCategories(initialFilter),
-          getCountries(),
+          getCountries(initialFilter),
         ]);
 
         if (!mounted) return;
@@ -378,6 +391,7 @@ function Header({
 
 function Hero({ movies, selected, onSelect }: { movies: Movie[]; selected: Movie; onSelect: (movie: Movie) => void }) {
   const spotlight = movies.slice(0, 4);
+  const background = heroBackdrop(selected);
 
   return (
     <>
@@ -389,9 +403,19 @@ function Hero({ movies, selected, onSelect }: { movies: Movie[]; selected: Movie
           initial={{ opacity: 0.3, scale: 1.04 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.7 }}
-          style={{ backgroundImage: `url(${backdrop(selected)})` }}
+          style={{ backgroundImage: background ? `url(${background})` : "var(--tsverse-bg-image)" }}
         />
         <div className="hero-shade" />
+
+        <motion.div
+          className="hero-feature-poster"
+          key={`${selected.slug}-poster`}
+          initial={{ opacity: 0, x: 24, scale: 0.96 }}
+          animate={{ opacity: 1, x: 0, scale: 1 }}
+          transition={{ duration: 0.55, ease: "easeOut" }}
+        >
+          <img src={poster(selected)} alt={displayText(selected.name)} />
+        </motion.div>
 
         <motion.div
           className="hero-copy"
@@ -639,6 +663,7 @@ function flattenEpisodes(servers: { server_name: string; server_data: EpisodeIte
 
 function cleanServerName(name: string) {
   const cleanName = displayText(name);
+  if (/^#?\s*HHKUNGFU\s*$/i.test(cleanName)) return "";
   return cleanName.replace(/^#?\s*Hà Nội\s*/i, "").trim() || cleanName;
 }
 
@@ -1186,7 +1211,7 @@ function MovieDetailPage() {
             <div className="episode-server-groups">
               {episodeServers.map((server) => (
                 <section className="episode-server" key={server.server_name}>
-                  <h3>{cleanServerName(server.server_name)}</h3>
+                  {cleanServerName(server.server_name) ? <h3>{cleanServerName(server.server_name)}</h3> : null}
                   <div>
                     {newestEpisodesFirst(server.server_data).map((episode) => (
                       <Link key={`${server.server_name}-${episode.slug}-${episode.link_embed}`} to={`/xem-phim/${movie.slug}?episode=${episode.slug}`}>
@@ -1366,7 +1391,7 @@ function WatchPage() {
             <div className="episode-server-groups">
               {episodeServers.map((server) => (
                 <section className="episode-server" key={server.server_name}>
-                  <h3>{cleanServerName(server.server_name)}</h3>
+                  {cleanServerName(server.server_name) ? <h3>{cleanServerName(server.server_name)}</h3> : null}
                   <div>
                     {newestEpisodesFirst(server.server_data).map((episode) => {
                       const episodeWithServer = { ...episode, serverName: server.server_name };
@@ -1527,8 +1552,6 @@ function HomePage({ initialFilter = "all" }: { initialFilter?: HeaderFilter }) {
           </div>
         ) : (
           <>
-            <Hero movies={movies} selected={activeMovie} onSelect={setSelected} />
-
             {error ? <div className="notice">{error}</div> : null}
 
             <div className="content-layout">

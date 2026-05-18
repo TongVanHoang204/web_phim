@@ -1,5 +1,5 @@
 import axios from "axios";
-import type { Movie, MovieDetailResponse, MovieResponse, Taxonomy } from "../@types/movie";
+import type { EpisodeServer, Movie, MovieDetailResponse, MovieResponse, Taxonomy } from "../@types/movie";
 
 export type WatchHistoryPayload = {
   name: string;
@@ -11,21 +11,14 @@ export type WatchHistoryPayload = {
   watchedAt: number;
 };
 
-const client = axios.create({
-  baseURL: import.meta.env.VITE_PHIMAPI_BASE_URL || "https://phimapi.com",
-  timeout: 60000,
-});
 const localClient = axios.create({
   baseURL: "",
   timeout: 60000,
 });
 
 const DEFAULT_IMAGE_CDN = import.meta.env.VITE_IMAGE_CDN_BASE_URL || "https://phimimg.com";
-const ALLOWED_ANIMATION_COUNTRIES = new Set(["trung-quoc", "nhat-ban"]);
 const BLOCKED_TAXONOMY_SLUGS = new Set(["phim-18", "phim-18+", "18", "18-plus", "mien-tay", "tre-em"]);
 const BLOCKED_TAXONOMY_NAMES = ["18+", "Miền Tây", "Trẻ Em"];
-
-type CategorySource = NonNullable<Taxonomy["source"]>;
 
 function absoluteImageUrl(url?: string, cdn = DEFAULT_IMAGE_CDN) {
   if (!url) return url;
@@ -34,11 +27,12 @@ function absoluteImageUrl(url?: string, cdn = DEFAULT_IMAGE_CDN) {
   return `${cdn}${cleanUrl}`;
 }
 
-function normalizeMovie(movie: Movie, cdn = DEFAULT_IMAGE_CDN): Movie {
+function normalizeMovie(movie: Movie): Movie {
   return {
     ...movie,
-    poster_url: absoluteImageUrl(movie.poster_url, cdn),
-    thumb_url: absoluteImageUrl(movie.thumb_url, cdn),
+    source: movie.source || "hhkungfu",
+    poster_url: absoluteImageUrl(movie.poster_url),
+    thumb_url: absoluteImageUrl(movie.thumb_url),
   };
 }
 
@@ -49,41 +43,8 @@ function unwrapItems<T>(payload: MovieResponse | T[]): T[] {
   return [];
 }
 
-function categorySlug(source: CategorySource, slug: string) {
-  return source === "phimapi" ? slug : `${source}:${slug}`;
-}
-
-function categoryFromSource(item: Taxonomy, source: CategorySource): Taxonomy {
-  return {
-    ...item,
-    source,
-    slug: categorySlug(source, item.slug),
-  };
-}
-
-function parseCategorySlug(slug: string): { source: CategorySource; slug: string } {
-  const [source, ...rest] = slug.split(":");
-  if ((source === "hh3d" || source === "hhpanda") && rest.length) {
-    return { source, slug: rest.join(":") };
-  }
-  return { source: "phimapi", slug };
-}
-
-function movieFromSource(movie: Movie, source: CategorySource) {
-  const normalized = normalizeMovie(movie);
-  return {
-    ...normalized,
-    source,
-    slug: source === "phimapi" ? normalized.slug : `${source}:${normalized.slug}`,
-  };
-}
-
-function isAnimeOrDonghua(movie: Movie) {
-  const hasAnimationType = movie.type === "hoathinh";
-  const hasAnimationCategory = movie.category?.some((item) => item.slug === "hoat-hinh");
-  const hasAllowedCountry = movie.country?.some((item) => ALLOWED_ANIMATION_COUNTRIES.has(item.slug));
-  const hasBlockedCategory = movie.category?.some(isBlockedTaxonomy);
-  return Boolean((hasAnimationType || hasAnimationCategory) && !hasBlockedCategory && (!movie.country?.length || hasAllowedCountry));
+function paginationFrom(data: MovieResponse) {
+  return data.pagination || data.data?.params?.pagination || data.params?.pagination;
 }
 
 function isBlockedTaxonomy(item: Taxonomy) {
@@ -93,87 +54,47 @@ function isBlockedTaxonomy(item: Taxonomy) {
 }
 
 export async function getLatestMovies(page = 1) {
-  return getMovies({ type: "all", page, limit: 40 });
+  return getMovies({ page, limit: 40 });
 }
 
-export async function getTopViewedMovies(limit = 9) {
-  const { data } = await client.get<MovieResponse>("/v1/api/danh-sach/hoat-hinh", {
-    params: {
-      page: 1,
-      limit,
-      sort_field: "view",
-      sort_type: "desc",
-      sort_lang: "vietsub",
-    },
+function apiSourceFromType(type?: string | number) {
+  return type === "japan" ? "animehay" : undefined;
+}
+
+export async function getTopViewedMovies(limit = 9, type?: string) {
+  const { data } = await localClient.get<MovieResponse>("/api/movies/popular", {
+    params: { page: 1, limit, source: apiSourceFromType(type) },
   });
-  const cdn = data.data?.APP_DOMAIN_CDN_IMAGE || DEFAULT_IMAGE_CDN;
-  return unwrapItems<Movie>(data)
-    .map((movie) => normalizeMovie(movie, cdn))
-    .filter(isAnimeOrDonghua);
+  return unwrapItems<Movie>(data).map(normalizeMovie);
 }
 
 export async function getMovies(params: Record<string, string | number | undefined>) {
-  const countryMap: Record<string, string | undefined> = {
-    china: "trung-quoc",
-    japan: "nhat-ban",
-  };
-  const country = typeof params.type === "string" ? countryMap[params.type] : undefined;
-  const { data } = await client.get<MovieResponse>("/v1/api/danh-sach/hoat-hinh", {
+  const { data } = await localClient.get<MovieResponse>("/api/movies/latest", {
     params: {
       page: params.page || 1,
       limit: params.limit || 24,
-      country,
-      sort_field: "modified.time",
-      sort_type: "desc",
-      sort_lang: "vietsub",
+      source: apiSourceFromType(params.type),
     },
   });
-  const cdn = data.data?.APP_DOMAIN_CDN_IMAGE || DEFAULT_IMAGE_CDN;
-  const items = unwrapItems<Movie>(data)
-    .map((movie) => normalizeMovie(movie, cdn))
-    .filter(isAnimeOrDonghua);
 
   return {
-    items,
-    pagination: data.pagination || data.data?.params?.pagination || data.params?.pagination,
+    items: unwrapItems<Movie>(data).map(normalizeMovie),
+    pagination: paginationFrom(data),
   };
 }
 
 export async function getMoviesByCategory(slug: string, params: Record<string, string | number | undefined> = {}) {
-  const category = parseCategorySlug(slug);
-
-  if (category.source === "hh3d" || category.source === "hhpanda") {
-    const { data } = await localClient.get<MovieResponse>(`/api/${category.source}/the-loai/${category.slug}`, {
-      params: {
-        page: params.page || 1,
-        limit: params.limit || 24,
-      },
-    });
-
-    return {
-      items: unwrapItems<Movie>(data).map((movie) => movieFromSource(movie, category.source)),
-      pagination: data.pagination || data.data?.params?.pagination || data.params?.pagination,
-    };
-  }
-
-  const { data } = await client.get<MovieResponse>(`/v1/api/the-loai/${slug}`, {
+  const { data } = await localClient.get<MovieResponse>(`/api/movies/category/${slug}`, {
     params: {
       page: params.page || 1,
       limit: params.limit || 24,
-      country: params.type === "japan" ? "nhat-ban" : params.type === "china" ? "trung-quoc" : undefined,
-      sort_field: "modified.time",
-      sort_type: "desc",
-      sort_lang: "vietsub",
+      source: apiSourceFromType(params.type),
     },
   });
-  const cdn = data.data?.APP_DOMAIN_CDN_IMAGE || DEFAULT_IMAGE_CDN;
-  const items = unwrapItems<Movie>(data)
-    .map((movie) => normalizeMovie(movie, cdn))
-    .filter(isAnimeOrDonghua);
 
   return {
-    items,
-    pagination: data.pagination || data.data?.params?.pagination || data.params?.pagination,
+    items: unwrapItems<Movie>(data).map(normalizeMovie),
+    pagination: paginationFrom(data),
   };
 }
 
@@ -181,7 +102,7 @@ function readableText(value?: string) {
   if (!value) return "";
   let text = value;
 
-  if (/(Ã|Ä|Æ|áº|á»)/.test(text)) {
+  if (/(Ãƒ|Ã„|Ã†|Ã¡Âº|Ã¡Â»)/.test(text)) {
     try {
       const bytes = Uint8Array.from(Array.from(text), (char) => char.charCodeAt(0) & 0xff);
       const decoded = new TextDecoder("utf-8").decode(bytes);
@@ -254,55 +175,39 @@ export async function getRelatedMovies(movie: Movie, limit = 8) {
 }
 
 export async function searchMovies(keyword: string) {
-  const { data } = await client.get<MovieResponse>("/v1/api/tim-kiem", {
-    params: { keyword, page: 1, sort_lang: "vietsub" },
+  const { data } = await localClient.get<MovieResponse>("/api/movies/latest", {
+    params: { page: 1, limit: 100 },
   });
-  const cdn = data.data?.APP_DOMAIN_CDN_IMAGE || DEFAULT_IMAGE_CDN;
+  const normalizedKeyword = keyword.toLocaleLowerCase("vi-VN");
   return unwrapItems<Movie>(data)
-    .map((movie) => normalizeMovie(movie, cdn))
-    .filter(isAnimeOrDonghua);
+    .map(normalizeMovie)
+    .filter((movie) => `${movie.name} ${movie.origin_name || ""}`.toLocaleLowerCase("vi-VN").includes(normalizedKeyword));
 }
 
 export async function getCategories(type: string = "all") {
-  const sources: Array<{ source: CategorySource; path: string }> = [
-    { source: "hh3d", path: "/api/hh3d/the-loai" },
-    { source: "hhpanda", path: "/api/hhpanda/the-loai" },
-  ];
-  const results = await Promise.allSettled(sources.map((source) => localClient.get<MovieResponse | Taxonomy[]>(source.path)));
-
-  return results.flatMap((result, index) => {
-    if (result.status !== "fulfilled") return [];
-    const source = sources[index].source;
-    return unwrapItems<Taxonomy>(result.value.data)
-      .filter((item) => !isBlockedTaxonomy(item))
-      .map((item) => categoryFromSource(item, source));
+  const { data } = await localClient.get<MovieResponse | Taxonomy[]>("/api/movies/categories", {
+    params: { source: apiSourceFromType(type) },
   });
+  return unwrapItems<Taxonomy>(data)
+    .filter((item) => !isBlockedTaxonomy(item))
+    .map((item) => ({ ...item, source: item.source || (type === "japan" ? "animehay" : "hhkungfu") }));
 }
 
-export async function getCountries() {
-  const { data } = await client.get<MovieResponse | Taxonomy[]>("/quoc-gia");
-  return unwrapItems<Taxonomy>(data);
+export async function getCountries(type: string = "all") {
+  if (type === "japan") return [{ _id: 2, name: "Nhật Bản", slug: "nhat-ban", source: "animehay" as const }];
+  return [{ _id: 1, name: "Trung Quốc", slug: "trung-quoc", source: "hhkungfu" as const }];
 }
 
 export async function getMovieDetail(slug: string) {
-  const sourceMovie = parseCategorySlug(slug);
-
-  if (sourceMovie.source === "hh3d" || sourceMovie.source === "hhpanda") {
-    const { data } = await localClient.get<MovieDetailResponse>(`/api/${sourceMovie.source}/phim/${sourceMovie.slug}`);
-    const movie = data.movie || data.data?.movie;
-
-    return {
-      movie: movie ? movieFromSource(movie, sourceMovie.source) : undefined,
-      episodes: data.episodes || data.data?.episodes || [],
-    };
-  }
-
-  const { data } = await client.get<MovieDetailResponse>(`/phim/${slug}`);
-  let movie = data.movie || data.data?.movie;
+  const [{ data: detailData }, { data: episodeData }] = await Promise.all([
+    localClient.get<MovieDetailResponse>(`/api/movies/${slug}`),
+    localClient.get<MovieDetailResponse & { episodes?: EpisodeServer[] }>(`/api/movies/${slug}/episodes`),
+  ]);
+  const movie = detailData.movie || detailData.data?.movie;
 
   return {
     movie: movie ? normalizeMovie(movie) : undefined,
-    episodes: data.episodes || data.data?.episodes || [],
+    episodes: episodeData.episodes || episodeData.data?.episodes || [],
   };
 }
 
