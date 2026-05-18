@@ -11,8 +11,10 @@ export type WatchHistoryPayload = {
   watchedAt: number;
 };
 
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
+
 const localClient = axios.create({
-  baseURL: "",
+  baseURL: API_BASE_URL,
   timeout: 60000,
 });
 
@@ -25,6 +27,27 @@ function absoluteImageUrl(url?: string, cdn = DEFAULT_IMAGE_CDN) {
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
   const cleanUrl = url.startsWith("/") ? url : `/${url}`;
   return `${cdn}${cleanUrl}`;
+}
+
+function backendUrl(url?: string) {
+  if (!url || !API_BASE_URL || url.startsWith("http://") || url.startsWith("https://")) return url;
+  return `${API_BASE_URL}${url.startsWith("/") ? url : `/${url}`}`;
+}
+
+function normalizeEpisode(episode: EpisodeItem): EpisodeItem {
+  return {
+    ...episode,
+    link_embed: backendUrl(episode.link_embed) || episode.link_embed,
+    link_m3u8: backendUrl(episode.link_m3u8),
+    fallback_embed: backendUrl(episode.fallback_embed) || episode.fallback_embed,
+  };
+}
+
+function normalizeEpisodeServers(servers: EpisodeServer[]) {
+  return servers.map((server) => ({
+    ...server,
+    server_data: server.server_data.map(normalizeEpisode),
+  }));
 }
 
 function normalizeMovie(movie: Movie): Movie {
@@ -207,13 +230,13 @@ export async function getMovieDetail(slug: string) {
 
   return {
     movie: movie ? normalizeMovie(movie) : undefined,
-    episodes: episodeData.episodes || episodeData.data?.episodes || [],
+    episodes: normalizeEpisodeServers(episodeData.episodes || episodeData.data?.episodes || []),
   };
 }
 
 export async function getEpisodePlayer(episodeId: string) {
   const { data } = await localClient.get<{ episode?: EpisodeItem }>(`/api/episodes/${episodeId}`);
-  return data.episode;
+  return data.episode ? normalizeEpisode(data.episode) : data.episode;
 }
 
 export async function getWatchHistory() {

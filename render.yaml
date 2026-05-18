@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: tsverse-backend
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm --workspace vsmov-backend run build
+    startCommand: npm --workspace vsmov-backend run start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: "true"
+      - key: CLIENT_URL
+        value: https://tsverse.vercel.app
+      - key: CORS_ORIGINS
+        value: https://tsverse.vercel.app,http://localhost:5173,http://localhost:5174
