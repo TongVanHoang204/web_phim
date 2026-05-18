@@ -24,6 +24,11 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           xfwd: true,
         },
+        "/streamfree-guard.js": {
+          target: env.VITE_BACKEND_PROXY_TARGET || "http://localhost:8081",
+          changeOrigin: true,
+          xfwd: true,
+        },
         "/cdn-cgi": {
           target: env.VITE_BACKEND_PROXY_TARGET || "http://localhost:8081",
           changeOrigin: true,

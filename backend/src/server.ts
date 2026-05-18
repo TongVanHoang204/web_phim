@@ -466,7 +466,7 @@ function streamfreeProxyUrl(value: string) {
 
 const streamfreeDetectorGuardJs =
   '!function(){try{var n=function(){};["clear","table","log","debug","info","warn","error","dir","trace"].forEach(function(k){try{console[k]=n}catch(e){}});var w=function(){return window.innerWidth},h=function(){return window.innerHeight};try{Object.defineProperty(window,"outerWidth",{get:w,configurable:true})}catch(e){}try{Object.defineProperty(window,"outerHeight",{get:h,configurable:true})}catch(e){}}catch(e){}}();';
-const streamfreeDetectorGuard = `<script>${streamfreeDetectorGuardJs}</script>`;
+const streamfreeDetectorGuard = '<script src="/streamfree-guard.js"></script>';
 
 function encodeEpisodeId(postId: string, chapter: string, type: string, sv: string) {
   return Buffer.from(JSON.stringify({ postId, chapter, type, sv }), "utf8").toString("base64url");
@@ -1791,6 +1791,10 @@ async function proxyStreamfreeRequest(request: express.Request, response: expres
         .replace(/<head>/i, `<head><base href="/">${streamfreeDetectorGuard}`)
         .replace(/(src|href)=["']https:\/\/streamfree\.vip\/([^"']+)["']/gi, '$1="/$2"')
         .replace(/https:\/\/streamfree\.vip\//g, "/");
+      response.setHeader(
+        "content-security-policy",
+        "default-src 'self' data: blob: https: http:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https: http:; media-src 'self' data: blob: https: http:; connect-src 'self' https: http:; worker-src 'self' blob:; frame-ancestors 'self'",
+      );
       response.type("text/html").send(html);
       return;
     }
@@ -1822,6 +1826,11 @@ app.all("/embed/*", async (request, response) => {
 app.all("/public/*", async (request, response) => {
   const rawPath = `public/${(request.params as unknown as Record<string, string>)[0] || ""}`;
   await proxyStreamfreeRequest(request, response, rawPath);
+});
+
+app.get("/streamfree-guard.js", (_request, response) => {
+  response.setHeader("cache-control", "public, max-age=3600");
+  response.type("text/javascript").send(streamfreeDetectorGuardJs);
 });
 
 app.all("/cdn-cgi/*", async (request, response) => {

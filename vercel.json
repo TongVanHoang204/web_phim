@@ -21,6 +21,10 @@
       "destination": "/api/index"
     },
     {
+      "source": "/streamfree-guard.js",
+      "destination": "/api/index"
+    },
+    {
       "source": "/cdn-cgi/:path*",
       "destination": "/api/index"
     },
