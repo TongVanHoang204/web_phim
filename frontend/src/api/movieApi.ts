@@ -143,7 +143,29 @@ function readableText(value?: string) {
   return text;
 }
 
+function normalizeSeriesText(value?: string) {
+  return readableText(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\u0111/g, "d")
+    .replace(/\u0110/g, "D")
+    .toLocaleLowerCase("vi-VN")
+    .replace(/[^a-z0-9()]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function stripSeasonWords(value: string) {
+  return value
+    .replace(/\([^)]*(phan|season|ss|s\d+)[^)]*\)/gi, " ")
+    .replace(/\b(phan|season|ss)\s*(\d+|mot|hai|ba|bon|tu|nam|sau|bay|tam|chin|muoi)\b/gi, " ")
+    .replace(/\bs\d+\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function cleanSeriesTitle(value?: string) {
+  return stripSeasonWords(normalizeSeriesText(value));
   return readableText(value)
     .toLocaleLowerCase("vi-VN")
     .replace(/\([^)]*(phần|phan|season|ss|s\d+)[^)]*\)/gi, " ")
@@ -153,6 +175,7 @@ function cleanSeriesTitle(value?: string) {
 }
 
 function relatedKeyword(movie: Movie) {
+  return stripSeasonWords(normalizeSeriesText(movie.name || movie.origin_name || ""));
   return (movie.name || movie.origin_name || "")
     .replace(/\([^)]*(phần|phan|season|ss|s\d+)[^)]*\)/gi, " ")
     .replace(/\b(phần|phan|season)\s*\d+\b/gi, " ")
@@ -175,8 +198,14 @@ function isSameSeries(baseTitles: string[], item: Movie) {
   );
 }
 
+function uniqueRelatedKeywords(movie: Movie) {
+  const values = [movie.name, movie.origin_name, relatedKeyword(movie), cleanSeriesTitle(movie.name), cleanSeriesTitle(movie.origin_name)]
+    .map((value) => readableText(value || "").trim())
+    .filter((value) => value.length >= 3);
+  return Array.from(new Set(values)).slice(0, 5);
+}
+
 export async function getRelatedMovies(movie: Movie, limit = 8) {
-  const keyword = cleanSeriesTitle(normalizeRelatedKeyword(relatedKeyword(movie)));
   const baseTitles = [cleanSeriesTitle(movie.name), cleanSeriesTitle(movie.origin_name)].filter((title) => title.length >= 3);
   const seen = new Set([movie.slug]);
   const related: Movie[] = [];
@@ -191,11 +220,23 @@ export async function getRelatedMovies(movie: Movie, limit = 8) {
     }
   }
 
-  if (keyword.length >= 3) {
+  for (const keyword of uniqueRelatedKeywords(movie)) {
     try {
       append(await searchMovies(keyword));
     } catch {
-      return [];
+      continue;
+    }
+    if (related.length >= limit) break;
+  }
+
+  if (related.length < limit) {
+    for (const category of movie.category || []) {
+      try {
+        append((await getMoviesByCategory(category.slug, { page: 1, limit: 40, source: movie.source === "animehay" ? "animehay" : undefined })).items);
+      } catch {
+        continue;
+      }
+      if (related.length >= limit) break;
     }
   }
 
@@ -203,13 +244,13 @@ export async function getRelatedMovies(movie: Movie, limit = 8) {
 }
 
 export async function searchMovies(keyword: string) {
-  const { data } = await localClient.get<MovieResponse>("/api/movies/latest", {
-    params: { page: 1, limit: 100 },
+  const { data } = await localClient.get<MovieResponse>("/api/movies/search", {
+    params: { keyword, page: 1, limit: 100, source: "all" },
   });
-  const normalizedKeyword = keyword.toLocaleLowerCase("vi-VN");
+  const normalizedKeyword = normalizeSeriesText(keyword);
   return unwrapItems<Movie>(data)
     .map(normalizeMovie)
-    .filter((movie) => `${movie.name} ${movie.origin_name || ""}`.toLocaleLowerCase("vi-VN").includes(normalizedKeyword));
+    .filter((movie) => normalizeSeriesText(`${movie.name} ${movie.origin_name || ""}`).includes(normalizedKeyword));
 }
 
 export async function getCategories(type: string = "all") {

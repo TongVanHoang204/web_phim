@@ -895,6 +895,18 @@ function animehayLatestPagePath(page: number) {
   return `/phim-moi-cap-nhap/tat-ca-${page}.html`;
 }
 
+function animehaySearchPagePath(keyword: string) {
+  const slug = keyword
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\u0111/g, "d")
+    .replace(/\u0110/g, "D")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return `/tim-kiem/${slug || "phim"}.html`;
+}
+
 function animehayInternalSlug(rawSlug: string, movieId: string | number) {
   return `animehay-${movieId}-${rawSlug}`;
 }
@@ -1744,6 +1756,98 @@ app.get("/api/movies/popular", async (request, response) => {
     response.status(502).json({
       status: false,
       message: "Cannot load popular movies",
+      detail: errorDetail(error),
+    });
+  }
+});
+
+app.get("/api/movies/search", async (request, response) => {
+  const page = Number(request.query.page || 1);
+  const limit = Number(request.query.limit || 24);
+  const keyword = String(request.query.keyword || "").trim();
+
+  if (!keyword) {
+    response.json({
+      status: true,
+      source: requestWantsAllSources(request) ? "ALL" : requestWantsAnimehay(request) ? "ANIMEHAY" : "HHKUNGFU",
+      items: [],
+      pagination: {
+        totalItems: 0,
+        totalItemsPerPage: 0,
+        currentPage: page,
+        totalPages: 1,
+      },
+    });
+    return;
+  }
+
+  try {
+    if (requestWantsAllSources(request)) {
+      const [hhkungfuResult, animehayResult] = await Promise.allSettled([
+        fetchHhkungfuJson<HhpandaPost[]>("/wp-json/wp/v2/posts", {
+          page,
+          per_page: limit,
+          search: keyword,
+          _embed: 1,
+        }),
+        (async () => {
+          const html = await fetchAnimehayText(animehaySearchPagePath(keyword));
+          const items = parseAnimehayMovies(html, limit);
+          return {
+            items,
+            pagination: parseAnimehayPagination(html, page, items.length),
+          };
+        })(),
+      ]);
+
+      const hhkungfuItems =
+        hhkungfuResult.status === "fulfilled" ? hhkungfuListResponse("hh3d", hhkungfuResult.value.data, page, hhkungfuResult.value.total, hhkungfuResult.value.totalPages).items : [];
+      const animehayItems = animehayResult.status === "fulfilled" ? animehayResult.value.items : [];
+      const items = mergeLatestSourceMovies([hhkungfuItems as LatestMovieItem[], animehayItems as LatestMovieItem[]], limit);
+
+      response.json({
+        status: true,
+        source: "ALL",
+        items,
+        pagination: {
+          totalItems:
+            (hhkungfuResult.status === "fulfilled" ? hhkungfuResult.value.total : 0) +
+            (animehayResult.status === "fulfilled" ? animehayResult.value.pagination.totalItems : 0) ||
+            items.length,
+          totalItemsPerPage: items.length,
+          currentPage: page,
+          totalPages: Math.max(
+            page,
+            hhkungfuResult.status === "fulfilled" ? hhkungfuResult.value.totalPages : 1,
+            animehayResult.status === "fulfilled" ? animehayResult.value.pagination.totalPages : 1,
+          ),
+        },
+        partial_errors: [
+          hhkungfuResult.status === "rejected" ? "HHKUNGFU" : "",
+          animehayResult.status === "rejected" ? "ANIMEHAY" : "",
+        ].filter(Boolean),
+      });
+      return;
+    }
+
+    if (requestWantsAnimehay(request)) {
+      const html = await fetchAnimehayText(animehaySearchPagePath(keyword));
+      response.json(animehayListResponse(parseAnimehayMovies(html, limit), html, page));
+      return;
+    }
+
+    const result = await fetchHhkungfuJson<HhpandaPost[]>("/wp-json/wp/v2/posts", {
+      page,
+      per_page: limit,
+      search: keyword,
+      _embed: 1,
+    });
+
+    response.json(hhkungfuListResponse("hh3d", result.data, page, result.total, result.totalPages));
+  } catch (error) {
+    response.status(502).json({
+      status: false,
+      message: "Cannot search movies",
       detail: errorDetail(error),
     });
   }
