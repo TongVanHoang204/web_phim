@@ -245,10 +245,10 @@ export async function getRelatedMovies(movie: Movie, limit = 8) {
   const seen = new Set([movie.slug]);
   const related: Movie[] = [];
 
-  function append(items: Movie[]) {
+  function append(items: Movie[], options: { requireSameSeries?: boolean } = {}) {
     for (const item of items) {
       if (seen.has(item.slug)) continue;
-      if (!isSameSeries(baseTitles, item)) continue;
+      if (options.requireSameSeries && !isSameSeries(baseTitles, item)) continue;
       seen.add(item.slug);
       related.push(item);
       if (related.length >= limit) break;
@@ -257,7 +257,7 @@ export async function getRelatedMovies(movie: Movie, limit = 8) {
 
   for (const keyword of uniqueRelatedKeywords(movie)) {
     try {
-      append(await searchMovies(keyword));
+      append(await searchMovies(keyword), { requireSameSeries: true });
     } catch {
       continue;
     }
@@ -272,6 +272,15 @@ export async function getRelatedMovies(movie: Movie, limit = 8) {
         continue;
       }
       if (related.length >= limit) break;
+    }
+  }
+
+  if (related.length < limit) {
+    try {
+      const latest = await getMovies({ page: 1, limit: 40, source: movie.source === "animehay" ? "animehay" : "all" });
+      append(latest.items);
+    } catch {
+      return related.slice(0, limit);
     }
   }
 
