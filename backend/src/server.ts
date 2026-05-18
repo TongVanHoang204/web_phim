@@ -1255,6 +1255,8 @@ app.use(
   }),
 );
 app.use("/api", apiLimiter);
+app.use("/api/streamfree", express.raw({ type: "*/*", limit: "2mb" }));
+app.use("/cdn-cgi", express.raw({ type: "*/*", limit: "2mb" }));
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "64kb" }));
 app.use(morgan("dev"));
 
@@ -1731,9 +1733,7 @@ app.get("/api/animehay/hls-proxy", async (request, response) => {
   }
 });
 
-app.get("/api/streamfree/*", async (request, response) => {
-  const rawPath = ((request.params as unknown as Record<string, string>)[0] || "");
-
+async function proxyStreamfreeRequest(request: express.Request, response: express.Response, rawPath: string) {
   if (!rawPath || rawPath.includes("..")) {
     response.status(400).type("text/plain").send("Invalid streamfree path");
     return;
@@ -1750,17 +1750,33 @@ app.get("/api/streamfree/*", async (request, response) => {
       }
     }
 
-    const result = await fetch(url, {
+    const headers: Record<string, string> = {
+      accept: String(request.headers.accept || "*/*"),
+      referer: hhkungfuBaseUrl,
+      origin: "https://streamfree.vip",
+      "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36",
+    };
+    const contentTypeHeader = request.headers["content-type"];
+    if (contentTypeHeader) headers["content-type"] = String(contentTypeHeader);
+    if (request.headers.cookie) headers.cookie = String(request.headers.cookie);
+
+    const init: RequestInit = {
+      method: request.method,
       headers: {
-        accept: request.headers.accept || "*/*",
-        referer: hhkungfuBaseUrl,
-        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36",
+        ...headers,
       },
-    });
+    };
+    if (request.method !== "GET" && request.method !== "HEAD" && request.body !== undefined) {
+      init.body = typeof request.body === "string" || Buffer.isBuffer(request.body) ? request.body : JSON.stringify(request.body);
+    }
+
+    const result = await fetch(url, init);
 
     if (!result.ok) throw new Error(`Streamfree returned ${result.status}`);
 
     const contentType = result.headers.get("content-type") || "application/octet-stream";
+    const setCookie = result.headers.get("set-cookie");
+    if (setCookie) response.setHeader("set-cookie", setCookie.replace(/Domain=streamfree\.vip;?\s*/gi, ""));
     response.setHeader("cache-control", contentType.includes("text/html") ? "no-store" : "public, max-age=300");
 
     if (contentType.includes("text/html")) {
@@ -1786,6 +1802,16 @@ app.get("/api/streamfree/*", async (request, response) => {
   } catch (error) {
     response.status(502).type("text/plain").send(errorDetail(error) || "Cannot proxy Streamfree");
   }
+}
+
+app.all("/api/streamfree/*", async (request, response) => {
+  const rawPath = ((request.params as unknown as Record<string, string>)[0] || "");
+  await proxyStreamfreeRequest(request, response, rawPath);
+});
+
+app.all("/cdn-cgi/*", async (request, response) => {
+  const rawPath = `cdn-cgi/${(request.params as unknown as Record<string, string>)[0] || ""}`;
+  await proxyStreamfreeRequest(request, response, rawPath);
 });
 
 app.get("/api/hhkungfu/player", async (request, response) => {
