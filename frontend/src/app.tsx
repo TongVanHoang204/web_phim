@@ -1004,7 +1004,6 @@ function HlsVideoPlayer({
           aria-label={title}
           allow="autoplay; encrypted-media; picture-in-picture"
           allowFullScreen
-          referrerPolicy="unsafe-url"
         />
         {iframeTimedOut ? (
           <div className="iframe-timeout">
