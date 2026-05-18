@@ -1001,9 +1001,10 @@ function HlsVideoPlayer({
         <iframe
           src={embedSrc}
           aria-label={title}
-          allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+          allow="autoplay; encrypted-media; picture-in-picture"
           allowFullScreen
           referrerPolicy="unsafe-url"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-presentation"
         />
         <div className="iframe-player-actions">
           <button onClick={() => setIframeReloadToken(Date.now())} type="button">
