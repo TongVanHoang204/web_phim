@@ -248,9 +248,24 @@ export async function searchMovies(keyword: string) {
     params: { keyword, page: 1, limit: 100, source: "all" },
   });
   const normalizedKeyword = normalizeSeriesText(keyword);
+  const keywordTokens = normalizedKeyword.split(" ").filter((token) => token.length >= 2);
+
+  function searchScore(movie: Movie) {
+    const haystack = normalizeSeriesText(`${movie.name} ${movie.origin_name || ""} ${movie.slug}`);
+    if (!haystack || !keywordTokens.length) return 0;
+    if (haystack.includes(normalizedKeyword)) return 100 + normalizedKeyword.length;
+
+    const matchedTokens = keywordTokens.filter((token) => haystack.includes(token)).length;
+    if (!matchedTokens) return 0;
+    return matchedTokens === keywordTokens.length ? 60 + matchedTokens : matchedTokens;
+  }
+
   return unwrapItems<Movie>(data)
     .map(normalizeMovie)
-    .filter((movie) => normalizeSeriesText(`${movie.name} ${movie.origin_name || ""}`).includes(normalizedKeyword));
+    .map((movie) => ({ movie, score: searchScore(movie) }))
+    .filter(({ score }) => score > 0)
+    .sort((left, right) => right.score - left.score)
+    .map(({ movie }) => movie);
 }
 
 export async function getCategories(type: string = "all") {
