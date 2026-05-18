@@ -1167,6 +1167,7 @@ a {
   opacity: 1;
 }
 
+.iframe-player-actions button,
 .iframe-player-actions a {
   display: inline-flex;
   align-items: center;
@@ -1181,6 +1182,7 @@ a {
   font-weight: 850;
   text-decoration: none;
   backdrop-filter: blur(14px);
+  cursor: pointer;
 }
 
 .player-frame:fullscreen {

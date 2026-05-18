@@ -457,6 +457,13 @@ function parseIframeSrc(html: string) {
   }
 }
 
+function streamfreeProxyUrl(value: string) {
+  if (!value) return "";
+  const url = new URL(value);
+  if (url.hostname !== "streamfree.vip") return value;
+  return `/api/streamfree${url.pathname}${url.search}`;
+}
+
 function encodeEpisodeId(postId: string, chapter: string, type: string, sv: string) {
   return Buffer.from(JSON.stringify({ postId, chapter, type, sv }), "utf8").toString("base64url");
 }
@@ -1603,6 +1610,7 @@ app.get("/api/episodes/:episodeId", async (request, response) => {
       sv: String(episode.sv),
     });
     const directEmbed = parseIframeSrc(playerHtml);
+    const proxiedEmbed = directEmbed ? streamfreeProxyUrl(directEmbed) : "";
 
     response.json({
       status: true,
@@ -1610,8 +1618,8 @@ app.get("/api/episodes/:episodeId", async (request, response) => {
       episode: {
         _id: request.params.episodeId,
         playerType: "iframe",
-        link_embed: directEmbed || fallbackEmbed,
-        fallback_embed: fallbackEmbed,
+        link_embed: proxiedEmbed || fallbackEmbed,
+        fallback_embed: directEmbed || fallbackEmbed,
         open_external: false,
       },
     });
@@ -1720,6 +1728,63 @@ app.get("/api/animehay/hls-proxy", async (request, response) => {
     response.type(contentType || "application/octet-stream").send(bytes);
   } catch (error) {
     response.status(502).type("text/plain").send(errorDetail(error) || "Cannot proxy AnimeHay media");
+  }
+});
+
+app.get("/api/streamfree/*", async (request, response) => {
+  const rawPath = ((request.params as unknown as Record<string, string>)[0] || "");
+
+  if (!rawPath || rawPath.includes("..")) {
+    response.status(400).type("text/plain").send("Invalid streamfree path");
+    return;
+  }
+
+  try {
+    const url = new URL(`/${rawPath}`, "https://streamfree.vip");
+    for (const [key, value] of Object.entries(request.query)) {
+      if (key === "url") continue;
+      if (Array.isArray(value)) {
+        value.forEach((item) => url.searchParams.append(key, String(item)));
+      } else if (value !== undefined) {
+        url.searchParams.set(key, String(value));
+      }
+    }
+
+    const result = await fetch(url, {
+      headers: {
+        accept: request.headers.accept || "*/*",
+        referer: hhkungfuBaseUrl,
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36",
+      },
+    });
+
+    if (!result.ok) throw new Error(`Streamfree returned ${result.status}`);
+
+    const contentType = result.headers.get("content-type") || "application/octet-stream";
+    response.setHeader("cache-control", contentType.includes("text/html") ? "no-store" : "public, max-age=300");
+
+    if (contentType.includes("text/html")) {
+      let html = await result.text();
+      html = html
+        .replace(/<head>/i, '<head><base href="/api/streamfree/">')
+        .replace(/(src|href)=["']\/(public\/[^"']+)["']/gi, '$1="/api/streamfree/$2"')
+        .replace(/(src|href)=["']https:\/\/streamfree\.vip\/([^"']+)["']/gi, '$1="/api/streamfree/$2"')
+        .replace(/https:\/\/streamfree\.vip\//g, "/api/streamfree/");
+      response.type("text/html").send(html);
+      return;
+    }
+
+    if (contentType.includes("javascript") || url.pathname.endsWith(".js")) {
+      let script = await result.text();
+      script = script.replace(/https:\/\/streamfree\.vip\//g, "/api/streamfree/");
+      response.type(contentType).send(script);
+      return;
+    }
+
+    const bytes = Buffer.from(await result.arrayBuffer());
+    response.type(contentType).send(bytes);
+  } catch (error) {
+    response.status(502).type("text/plain").send(errorDetail(error) || "Cannot proxy Streamfree");
   }
 });
 

@@ -713,6 +713,12 @@ function formatPlayerTime(value: number) {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
+function urlWithReloadToken(value: string, token: number) {
+  if (!token) return value;
+  const separator = value.includes("?") ? "&" : "?";
+  return `${value}${separator}tsv_reload=${token}`;
+}
+
 function RelatedMoviesPanel({ movies }: { movies: Movie[] }) {
   return (
     <section className="detail-related-panel">
@@ -760,6 +766,7 @@ function HlsVideoPlayer({
   const [paused, setPaused] = useState(true);
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(1);
+  const [iframeReloadToken, setIframeReloadToken] = useState(0);
 
   function clearHideControlsTimer() {
     if (hideControlsTimer.current) {
@@ -987,8 +994,7 @@ function HlsVideoPlayer({
   }, [episode.link_m3u8]);
 
   if (!episode.link_m3u8) {
-    const embedSrc = episode.fallback_embed || episode.link_embed;
-    const externalSrc = episode.source_url || episode.link_embed;
+    const embedSrc = urlWithReloadToken(episode.link_embed, iframeReloadToken);
 
     return (
       <div className="iframe-player">
@@ -1000,14 +1006,9 @@ function HlsVideoPlayer({
           referrerPolicy="unsafe-url"
         />
         <div className="iframe-player-actions">
-          <a href={externalSrc} rel="noreferrer" target="_blank">
-            <Play size={16} fill="currentColor" /> Mở player
-          </a>
-          {episode.link_embed !== embedSrc ? (
-            <a href={episode.link_embed} rel="noreferrer" target="_blank">
-              Player dự phòng
-            </a>
-          ) : null}
+          <button onClick={() => setIframeReloadToken(Date.now())} type="button">
+            <Play size={16} fill="currentColor" /> Tải lại player
+          </button>
         </div>
       </div>
     );
