@@ -1848,6 +1848,10 @@ app.get("/streamfree-guard.js", (_request, response) => {
   response.type("text/javascript").send(streamfreeDetectorGuardJs);
 });
 
+app.all(["/cdn-cgi/rum", "/api/streamfree/cdn-cgi/rum"], (_request, response) => {
+  response.status(204).end();
+});
+
 app.all("/cdn-cgi/*", async (request, response) => {
   const rawPath = `cdn-cgi/${(request.params as unknown as Record<string, string>)[0] || ""}`;
   await proxyStreamfreeRequest(request, response, rawPath);
