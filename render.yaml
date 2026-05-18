@@ -3,7 +3,7 @@ services:
     name: tsverse-backend
     runtime: node
     plan: free
-    buildCommand: npm install && npm --workspace vsmov-backend run build
+    buildCommand: npm install --include=dev && npm --workspace vsmov-backend run build
     startCommand: npm --workspace vsmov-backend run start
     healthCheckPath: /api/health
     envVars:
