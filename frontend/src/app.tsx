@@ -734,7 +734,7 @@ function RelatedMoviesPanel({ movies }: { movies: Movie[] }) {
           ))}
         </div>
       ) : (
-        <p className="detail-related-empty">Đang tìm phim cùng thể loại...</p>
+        <p className="detail-related-empty">Chưa tìm thấy phần liên quan cùng bộ.</p>
       )}
     </section>
   );

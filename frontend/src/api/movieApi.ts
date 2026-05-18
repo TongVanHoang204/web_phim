@@ -264,26 +264,6 @@ export async function getRelatedMovies(movie: Movie, limit = 8) {
     if (related.length >= limit) break;
   }
 
-  if (related.length < limit) {
-    for (const category of movie.category || []) {
-      try {
-        append((await getMoviesByCategory(category.slug, { page: 1, limit: 40, source: movie.source === "animehay" ? "animehay" : undefined })).items);
-      } catch {
-        continue;
-      }
-      if (related.length >= limit) break;
-    }
-  }
-
-  if (related.length < limit) {
-    try {
-      const latest = await getMovies({ page: 1, limit: 40, source: movie.source === "animehay" ? "animehay" : "all" });
-      append(latest.items);
-    } catch {
-      return related.slice(0, limit);
-    }
-  }
-
   return related.slice(0, limit);
 }
 
