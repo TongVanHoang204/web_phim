@@ -4,6 +4,7 @@ import Hls from "hls.js";
 import { Link, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
+  ChevronDown,
   Film,
   Flame,
   Globe2,
@@ -22,6 +23,7 @@ import {
   Tv,
   Volume2,
   VolumeX,
+  X,
 } from "lucide-react";
 import {
   getCategories,
@@ -303,6 +305,28 @@ function Header({
   onCategory?: (category: Taxonomy) => void;
 }) {
   const menuCategories = categories.length ? categories : fallbackCategories;
+  const threeDCategories = menuCategories.filter((category) => category.source !== "animehay").slice(0, 12);
+  const animeCategories = menuCategories.filter((category) => category.source === "animehay").slice(0, 18);
+
+  function categoryButton(cat: Taxonomy) {
+    return onCategory ? (
+      <button
+        className={activeCategory === cat.slug ? "selected" : ""}
+        key={`${cat.source || "hhkungfu"}-${cat.slug}`}
+        onClick={() => {
+          onCategory(cat);
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }}
+        type="button"
+      >
+        {displayText(cat.name)}
+      </button>
+    ) : (
+      <Link key={`${cat.source || "hhkungfu"}-${cat.slug}`} to="/#bo-loc">
+        {displayText(cat.name)}
+      </Link>
+    );
+  }
 
   return (
     <header className="site-header">
@@ -315,29 +339,19 @@ function Header({
           if (item.isDropdown) {
             return (
               <div key={item.label} className="nav-dropdown">
-                <button className={activeCategory ? "active" : ""} type="button">
+                <button aria-haspopup="true" className={activeCategory ? "active" : ""} type="button">
                   {item.label}
+                  <ChevronDown size={15} />
                 </button>
                 <div className="dropdown-menu">
-                  {menuCategories.slice(0, 28).map((cat) =>
-                    onCategory ? (
-                      <button
-                        className={activeCategory === cat.slug ? "selected" : ""}
-                        key={cat.slug}
-                        onClick={() => {
-                          onCategory(cat);
-                          window.scrollTo({ top: 0, behavior: "smooth" });
-                        }}
-                        type="button"
-                      >
-                        {displayText(cat.name)}
-                      </button>
-                    ) : (
-                      <Link key={cat.slug} to="/#bo-loc">
-                        {displayText(cat.name)}
-                      </Link>
-                    ),
-                  )}
+                  <section className="dropdown-group">
+                    <span>3D</span>
+                    <div>{threeDCategories.map(categoryButton)}</div>
+                  </section>
+                  <section className="dropdown-group">
+                    <span>Anime</span>
+                    <div>{animeCategories.map(categoryButton)}</div>
+                  </section>
                 </div>
               </div>
             );
@@ -385,6 +399,14 @@ function Header({
           onChange={(event) => onQueryChange(event.target.value)}
           placeholder="Tìm phim..."
         />
+        {query ? (
+          <button aria-label="Xoá tìm kiếm" className="search-clear" onClick={() => onQueryChange("")} type="button">
+            <X size={16} />
+          </button>
+        ) : null}
+        <button className="search-submit" type="submit">
+          Tìm
+        </button>
       </form>
     </header>
   );
