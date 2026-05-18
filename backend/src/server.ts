@@ -695,6 +695,56 @@ function animehayWatchPathFromUrl(value: string) {
   return `${url.pathname}${url.search}`;
 }
 
+const animehayChineseCategorySlugs = new Set([
+  "cn-animation",
+  "tien-hiep",
+  "kiem-hiep",
+  "vo-hiep",
+  "huyen-ao",
+  "di-gioi",
+  "xuyen-khong",
+  "trung-sinh",
+  "cna-ngon-tinh",
+  "cna-hai-huoc",
+]);
+
+const animehayChineseTitleSlugs = new Set([
+  "tien-nghich",
+  "muc-than-ky",
+  "vo-than-chua-te",
+  "dau-pha-thuong-khung",
+  "the-gioi-hoan-my",
+  "thon-phe-tinh-khong",
+  "than-an-vuong-toa",
+  "kiem-lai",
+  "kiem-lai-2",
+  "gia-thien",
+  "pham-nhan-tu-tien",
+  "dai-chua-te",
+  "nghich-thien-chi-ton",
+  "dai-luc-linh-vo",
+  "tien-vo-de-ton",
+  "doc-bo-tieu-dao",
+  "linh-kiem-ton",
+  "bach-luyen-thanh-than",
+]);
+
+function isAnimehayChineseAnimationSlug(slug = "") {
+  const normalized = slug.toLowerCase();
+  return (
+    animehayChineseTitleSlugs.has(normalized) ||
+    Array.from(animehayChineseTitleSlugs).some((blocked) => normalized === blocked || normalized.startsWith(`${blocked}-`))
+  );
+}
+
+function hasAnimehayChineseCategory(categories: Array<{ slug?: string; name?: string }>) {
+  return categories.some((category) => {
+    const normalizedSlug = String(category.slug || "").replace(/^animehay-\d+-/i, "").toLowerCase();
+    const normalizedName = decodeHtml(stripHtml(category.name || "")).toLowerCase();
+    return animehayChineseCategorySlugs.has(normalizedSlug) || normalizedName.includes("cn animation") || normalizedName.includes("cna");
+  });
+}
+
 function encodeAnimehayEpisodeId(watchPath: string) {
   return Buffer.from(JSON.stringify({ source: "animehay", watchPath }), "utf8").toString("base64url");
 }
@@ -730,6 +780,7 @@ function normalizeAnimehayCard(block: string) {
   const href = animehayAbsoluteUrl(detailHref[1]);
   const rawSlug = detailHref[2];
   const movieId = detailHref[3];
+  if (isAnimehayChineseAnimationSlug(rawSlug)) return null;
   const title =
     block.match(/title=["']([^"']+)["']/i)?.[1] ||
     block.match(/<div\b[^>]*class=["'][^"']*\bmc__name\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/i)?.[1] ||
@@ -795,6 +846,7 @@ function parseAnimehayCategories(html: string) {
     const id = Number(match[2]);
     const name = decodeHtml(stripHtml(match[3]));
     if (!rawSlug || !Number.isFinite(id) || !name) continue;
+    if (animehayChineseCategorySlugs.has(rawSlug.toLowerCase())) continue;
     found.set(String(id), { _id: id, name, slug: animehayCategorySlug(rawSlug, id), source: "animehay" });
   }
 
@@ -842,6 +894,7 @@ function normalizeAnimehayDetail(html: string, rawSlug: string, movieId: string)
     name: decodeHtml(stripHtml(match[3])),
     slug: animehayCategorySlug(match[1], match[2]),
   }));
+  if (isAnimehayChineseAnimationSlug(rawSlug) || hasAnimehayChineseCategory(categories)) return null;
   const score = html.match(/aim-meta-score[\s\S]*?([0-9]+(?:\.[0-9]+)?)/i)?.[1];
   const voteCount = html.match(/\((\d+)\s*đánh/i)?.[1];
   const episodes = parseAnimehayEpisodes(html);
@@ -1466,10 +1519,15 @@ app.get("/api/movies/:slug", async (request, response) => {
     const animehayMovie = parseAnimehayInternalSlug(String(request.params.slug));
     if (animehayMovie) {
       const html = await fetchAnimehayText(`/thong-tin-phim/${animehayMovie.rawSlug}-${animehayMovie.movieId}.html`);
+      const movie = normalizeAnimehayDetail(html, animehayMovie.rawSlug, animehayMovie.movieId);
+      if (!movie) {
+        response.status(404).json({ status: false, message: "Anime nay da duoc an khoi nguon AnimeHay" });
+        return;
+      }
       response.json({
         status: true,
         source: "ANIMEHAY",
-        movie: normalizeAnimehayDetail(html, animehayMovie.rawSlug, animehayMovie.movieId),
+        movie,
       });
       return;
     }
