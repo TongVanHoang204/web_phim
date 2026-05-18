@@ -1,7 +1,7 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import Hls from "hls.js";
-import { Link, Route, Routes, useNavigate, useParams } from "react-router-dom";
+import { Link, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   Film,
@@ -1473,6 +1473,7 @@ function HomePage({ initialFilter = "all" }: { initialFilter?: HeaderFilter }) {
   const [busy, setBusy] = useState(false);
   const [historyItems, setHistoryItems] = useState<WatchHistoryItem[]>([]);
   const navigate = useNavigate();
+  const location = useLocation();
 
   const activeMovie = selected || movies[0] || fallbackMovies[0];
   const featured = useMemo(() => movies.slice(0, HOME_MOVIE_DISPLAY_LIMIT), [movies]);
@@ -1506,23 +1507,40 @@ function HomePage({ initialFilter = "all" }: { initialFilter?: HeaderFilter }) {
     };
   }, []);
 
-  async function handleSearch() {
-    const keyword = query.trim();
-    if (!keyword) return;
+  async function runSearch(keyword: string) {
+    const cleanKeyword = keyword.trim();
+    if (!cleanKeyword) return;
+    setQuery(cleanKeyword);
     setBusy(true);
     try {
-      const results = await searchMovies(keyword);
+      const results = await searchMovies(cleanKeyword);
       setMovies(results);
       setSelected(results[0] || null);
       setActiveCategory("");
       setPagination(DEFAULT_PAGINATION);
       setError(results.length ? "" : "Không tìm thấy kết quả phù hợp.");
-      navigate("/");
     } catch {
       setError("Tìm kiếm thất bại, vui lòng thử lại.");
     } finally {
       setBusy(false);
     }
+  }
+
+  useEffect(() => {
+    const keyword = new URLSearchParams(location.search).get("q") || "";
+    if (!keyword.trim()) return;
+    void runSearch(keyword);
+  }, [location.search]);
+
+  async function handleSearch() {
+    const keyword = query.trim();
+    if (!keyword) return;
+    const nextSearch = `?q=${encodeURIComponent(keyword)}`;
+    if (location.pathname === "/" && location.search === nextSearch) {
+      await runSearch(keyword);
+      return;
+    }
+    navigate(`/${nextSearch}`);
   }
 
   async function handleFilter(value: HeaderFilter) {
@@ -1637,6 +1655,7 @@ function HomePage({ initialFilter = "all" }: { initialFilter?: HeaderFilter }) {
 function App() {
   const [query, setQuery] = useState("");
   const [headerCategories, setHeaderCategories] = useState<Taxonomy[]>(fallbackCategories);
+  const navigate = useNavigate();
 
   useEffect(() => {
     let mounted = true;
@@ -1656,8 +1675,10 @@ function App() {
     };
   }, []);
 
-  function noopSearch() {
-    return undefined;
+  function handleGlobalSearch() {
+    const keyword = query.trim();
+    if (!keyword) return;
+    navigate(`/?q=${encodeURIComponent(keyword)}`);
   }
 
   return (
@@ -1670,7 +1691,7 @@ function App() {
           path="/phim/:slug"
           element={
             <>
-              <Header query={query} onQueryChange={setQuery} onSubmit={noopSearch} categories={headerCategories} />
+              <Header query={query} onQueryChange={setQuery} onSubmit={handleGlobalSearch} categories={headerCategories} />
               <div className="page-shell">
                 <MovieDetailPage />
               </div>
@@ -1681,7 +1702,7 @@ function App() {
           path="/xem-phim/:slug"
           element={
             <>
-              <Header query={query} onQueryChange={setQuery} onSubmit={noopSearch} categories={headerCategories} />
+              <Header query={query} onQueryChange={setQuery} onSubmit={handleGlobalSearch} categories={headerCategories} />
               <div className="page-shell">
                 <WatchPage />
               </div>
