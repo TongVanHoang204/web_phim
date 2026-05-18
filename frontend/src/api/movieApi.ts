@@ -159,6 +159,7 @@ function stripSeasonWords(value: string) {
   return value
     .replace(/\([^)]*(phan|season|ss|s\d+)[^)]*\)/gi, " ")
     .replace(/\b(phan|season|ss)\s*(\d+|mot|hai|ba|bon|tu|nam|sau|bay|tam|chin|muoi)\b/gi, " ")
+    .replace(/\bpart\s*\d+\b/gi, " ")
     .replace(/\bs\d+\b/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -191,22 +192,56 @@ function normalizeRelatedKeyword(keyword: string) {
     .trim();
 }
 
+function canonicalSeriesKey(value?: string) {
+  return stripSeasonWords(normalizeSeriesText(value))
+    .replace(/\b(the\s+)?final\b.*$/gi, " ")
+    .replace(/\b(last attack|live action|chronicle|lost girls|picture drama|kuinaki sentaku|guren no yumiya|ova|specials?)\b.*$/gi, " ")
+    .replace(/\bmovie\s*\d*\b.*$/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function seriesKeys(...values: Array<string | undefined>) {
+  const keys = new Set<string>();
+
+  for (const value of values) {
+    const text = readableText(value || "");
+    if (!text.trim()) continue;
+
+    for (const part of text.split(/\s+(?:-|–|—)\s+|[:/|]/g)) {
+      const key = canonicalSeriesKey(part);
+      if (key.length >= 3) keys.add(key);
+    }
+
+    const fullKey = canonicalSeriesKey(text);
+    if (fullKey.length >= 3) keys.add(fullKey);
+  }
+
+  const combined = Array.from(keys).join(" ");
+  if (combined.includes("attack on titan") || combined.includes("shingeki no kyojin")) {
+    keys.add("attack on titan");
+    keys.add("shingeki no kyojin");
+  }
+
+  return Array.from(keys);
+}
+
 function isSameSeries(baseTitles: string[], item: Movie) {
-  const itemTitles = [cleanSeriesTitle(item.name), cleanSeriesTitle(item.origin_name)].filter(Boolean);
+  const itemTitles = seriesKeys(item.name, item.origin_name);
   return baseTitles.some((baseTitle) =>
-    itemTitles.some((itemTitle) => itemTitle === baseTitle || itemTitle.startsWith(`${baseTitle} `) || itemTitle.includes(` ${baseTitle} `)),
+    itemTitles.some((itemTitle) => itemTitle === baseTitle || itemTitle.startsWith(`${baseTitle} `) || baseTitle.startsWith(`${itemTitle} `)),
   );
 }
 
 function uniqueRelatedKeywords(movie: Movie) {
-  const values = [movie.name, movie.origin_name, relatedKeyword(movie), cleanSeriesTitle(movie.name), cleanSeriesTitle(movie.origin_name)]
+  const values = [movie.name, movie.origin_name, relatedKeyword(movie), cleanSeriesTitle(movie.name), cleanSeriesTitle(movie.origin_name), ...seriesKeys(movie.name, movie.origin_name)]
     .map((value) => readableText(value || "").trim())
     .filter((value) => value.length >= 3);
   return Array.from(new Set(values)).slice(0, 5);
 }
 
 export async function getRelatedMovies(movie: Movie, limit = 8) {
-  const baseTitles = [cleanSeriesTitle(movie.name), cleanSeriesTitle(movie.origin_name)].filter((title) => title.length >= 3);
+  const baseTitles = seriesKeys(movie.name, movie.origin_name);
   const seen = new Set([movie.slug]);
   const related: Movie[] = [];
 
