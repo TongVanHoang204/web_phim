@@ -476,12 +476,13 @@ function decodeEpisodeId(value: string) {
   }
 }
 
-function hhkungfuEpisodeItem(episode: { name: string; slug: string; postId: string; chapter: string; sv: string }, type: string) {
+function hhkungfuEpisodeItem(episode: { name: string; slug: string; postId: string; chapter: string; sv: string; sourceUrl?: string }, type: string) {
   return {
     _id: encodeEpisodeId(episode.postId, episode.chapter, type, episode.sv),
     name: episode.name,
     slug: episode.slug,
     link_embed: hhkungfuProxyPlayerUrl(episode.postId, episode.chapter, type, episode.sv),
+    source_url: episode.sourceUrl,
     open_external: false,
   };
 }
@@ -529,7 +530,7 @@ function parseHhkungfuPlayerServers(html: string) {
 }
 
 function parseHhkungfuEpisodes(html: string) {
-  const episodes = new Map<string, { name: string; slug: string; postId: string; chapter: string; sv: string }>();
+  const episodes = new Map<string, { name: string; slug: string; postId: string; chapter: string; sv: string; sourceUrl: string }>();
   const regex =
     /<a\b[^>]*data-post-id=["']([^"']+)["'][^>]*data-ep=["']([^"']+)["'][^>]*data-sv=["']([^"']+)["'][^>]*href=["']([^"']+)["'][^>]*title=["']([^"']*)["'][^>]*>/gi;
 
@@ -537,6 +538,7 @@ function parseHhkungfuEpisodes(html: string) {
     const postId = match[1];
     const chapter = match[2];
     const sv = match[3] || "1";
+    const sourceUrl = String(hhkungfuUrl(match[4] || "/"));
     const title = decodeHtml(stripHtml(match[5] || chapter));
     const slug = chapter
       .replace(/\.html$/i, "")
@@ -550,6 +552,7 @@ function parseHhkungfuEpisodes(html: string) {
       postId,
       chapter,
       sv,
+      sourceUrl,
     });
   }
 

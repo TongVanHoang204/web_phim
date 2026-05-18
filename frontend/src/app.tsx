@@ -987,21 +987,24 @@ function HlsVideoPlayer({
   }, [episode.link_m3u8]);
 
   if (!episode.link_m3u8) {
+    const embedSrc = episode.fallback_embed || episode.link_embed;
+    const externalSrc = episode.source_url || episode.link_embed;
+
     return (
       <div className="iframe-player">
         <iframe
-          src={episode.link_embed}
+          src={embedSrc}
           aria-label={title}
           allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
           allowFullScreen
           referrerPolicy="unsafe-url"
         />
         <div className="iframe-player-actions">
-          <a href={episode.link_embed} rel="noreferrer" target="_blank">
+          <a href={externalSrc} rel="noreferrer" target="_blank">
             <Play size={16} fill="currentColor" /> Mở player
           </a>
-          {episode.fallback_embed && episode.fallback_embed !== episode.link_embed ? (
-            <a href={episode.fallback_embed} rel="noreferrer" target="_blank">
+          {episode.link_embed !== embedSrc ? (
+            <a href={episode.link_embed} rel="noreferrer" target="_blank">
               Player dự phòng
             </a>
           ) : null}

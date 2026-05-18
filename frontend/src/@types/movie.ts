@@ -40,6 +40,7 @@ export type EpisodeItem = {
   filename?: string;
   link_embed: string;
   fallback_embed?: string;
+  source_url?: string;
   link_m3u8?: string;
   open_external?: boolean;
 };
