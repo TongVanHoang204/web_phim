@@ -461,11 +461,15 @@ function streamfreeProxyUrl(value: string) {
   if (!value) return "";
   const url = new URL(value);
   if (url.hostname !== "streamfree.vip") return value;
-  return `${url.pathname}${url.search}`;
+  return `/api/streamfree${url.pathname}${url.search}`;
 }
 
 function rewriteStreamfreeUrls(value: string) {
-  return value.replace(/https:\/\/streamfree\.vip\//g, "/");
+  return value
+    .replace(/https?:\/\/streamfree\.vip\//g, "/api/streamfree/")
+    .replace(/\/\/streamfree\.vip\//g, "/api/streamfree/")
+    .replace(/https?:\\\/\\\/streamfree\.vip\\\//g, "\\/api\\/streamfree\\/")
+    .replace(/\\\/\\\/streamfree\.vip\\\//g, "\\/api\\/streamfree\\/");
 }
 
 const streamfreeDetectorGuardJs =
@@ -1797,9 +1801,9 @@ async function proxyStreamfreeRequest(request: express.Request, response: expres
     if (contentType.includes("text/html")) {
       let html = await result.text();
       html = html
-        .replace(/<head>/i, `<head><base href="/">${streamfreeDetectorGuard}`)
-        .replace(/(src|href)=["']https:\/\/streamfree\.vip\/([^"']+)["']/gi, '$1="/$2"')
-        .replace(/https:\/\/streamfree\.vip\//g, "/");
+        .replace(/<head>/i, `<head><base href="/api/streamfree/">${streamfreeDetectorGuard}`)
+        .replace(/(src|href)=["'](?:https?:)?\/\/streamfree\.vip\/([^"']+)["']/gi, '$1="/api/streamfree/$2"');
+      html = rewriteStreamfreeUrls(html);
       html = neutralizeDebuggerScript(html);
       response.setHeader(
         "content-security-policy",
