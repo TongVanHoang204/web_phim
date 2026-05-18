@@ -967,6 +967,10 @@ function animehayLatestPagePath(page: number) {
   return page > 1 ? `/phim-moi-cap-nhap/trang-${page}.html` : "/phim-moi-cap-nhap/tat-ca-1.html";
 }
 
+function animehayAnimePagePath(page: number) {
+  return page > 1 ? `/the-loai/anime-1.html/trang-${page}.html?cate_id=1` : "/the-loai/anime-1.html";
+}
+
 function animehaySearchPagePath(keyword: string) {
   const slug = keyword
     .normalize("NFD")
@@ -1775,7 +1779,7 @@ app.get("/api/movies/latest", async (request, response) => {
     }
 
     if (requestWantsAnimehay(request)) {
-      const html = await fetchAnimehayText(animehayLatestPagePath(page));
+      const html = await fetchAnimehayText(animehayAnimePagePath(page));
       response.json(animehayListResponse(parseAnimehayMovies(html, limit), html, page));
       return;
     }
@@ -1816,7 +1820,7 @@ app.get("/api/movies/popular", async (request, response) => {
 
   try {
     if (requestWantsAnimehay(request)) {
-      const html = await fetchAnimehayText(animehayLatestPagePath(page));
+      const html = await fetchAnimehayText(animehayAnimePagePath(page));
       response.json(animehayListResponse(parseAnimehayMovies(html, limit), html, page));
       return;
     }
