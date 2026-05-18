@@ -1175,28 +1175,22 @@ function sourceMovieKey(item: LatestMovieItem) {
 
 function mergeLatestSourceMovies(sources: LatestMovieItem[][], limit: number) {
   const seen = new Set<string>();
-  const datedItems: LatestMovieItem[] = [];
-  const rankedItems: Array<{ item: LatestMovieItem; rank: number; sourceIndex: number }> = [];
+  const merged: LatestMovieItem[] = [];
+  const maxLength = Math.max(0, ...sources.map((items) => items.length));
 
-  sources.forEach((items, sourceIndex) => {
-    items.forEach((item, rank) => {
+  for (let rank = 0; rank < maxLength && merged.length < limit; rank += 1) {
+    for (const items of sources) {
+      const item = items[rank];
+      if (!item) continue;
       const key = sourceMovieKey(item);
-      if (seen.has(key)) return;
+      if (seen.has(key)) continue;
       seen.add(key);
+      merged.push(item);
+      if (merged.length >= limit) break;
+    }
+  }
 
-      if (datedMovieTime(item)) {
-        datedItems.push(item);
-        return;
-      }
-
-      rankedItems.push({ item, rank, sourceIndex });
-    });
-  });
-
-  datedItems.sort((left, right) => datedMovieTime(right) - datedMovieTime(left));
-  rankedItems.sort((left, right) => left.rank - right.rank || left.sourceIndex - right.sourceIndex);
-
-  return [...datedItems, ...rankedItems.map(({ item }) => item)].slice(0, limit);
+  return merged;
 }
 
 function parseAnimehayCategories(html: string) {
@@ -1727,7 +1721,7 @@ app.get("/api/movies/latest", async (request, response) => {
           };
         })(),
         (async () => {
-          const html = await fetchAnimehayText(animehayLatestPagePath(page));
+          const html = await fetchAnimehayText(animehayAnimePagePath(page));
           const items = parseAnimehayMovies(html, limit);
           return {
             items,
