@@ -964,7 +964,7 @@ function hhkungfuLatestResponse(items: ReturnType<typeof parseHhkungfuLatestMovi
 }
 
 function animehayLatestPagePath(page: number) {
-  return `/phim-moi-cap-nhap/tat-ca-${page}.html`;
+  return page > 1 ? `/phim-moi-cap-nhap/trang-${page}.html` : "/phim-moi-cap-nhap/tat-ca-1.html";
 }
 
 function animehaySearchPagePath(keyword: string) {
@@ -1074,8 +1074,8 @@ function decodeAnimehayEpisodeId(value: string) {
 }
 
 function parseAnimehayPagination(html: string, currentPage: number, itemCount: number) {
-  const pages = Array.from(html.matchAll(/tat-ca-(\d+)\.html/gi))
-    .map((match) => Number(match[1]))
+  const pages = Array.from(html.matchAll(/(?:tat-ca|trang)-(\d+)\.html|\/\s*(\d+)\s*<\/span>/gi))
+    .map((match) => Number(match[1] || match[2]))
     .filter(Number.isFinite);
   const totalPages = Math.max(currentPage, ...pages, 1);
 
@@ -2011,7 +2011,11 @@ app.get("/api/movies/category/:slug", async (request, response) => {
         response.status(404).json({ status: false, message: "Khong tim thay the loai AnimeHay" });
         return;
       }
-      const html = await fetchAnimehayText(`/the-loai/${animehayCategory.rawSlug}-${animehayCategory.categoryId}.html`);
+      const path =
+        page > 1
+          ? `/the-loai/${animehayCategory.rawSlug}-${animehayCategory.categoryId}.html/trang-${page}.html?cate_id=${animehayCategory.categoryId}`
+          : `/the-loai/${animehayCategory.rawSlug}-${animehayCategory.categoryId}.html`;
+      const html = await fetchAnimehayText(path);
       response.json(animehayListResponse(parseAnimehayMovies(html, Number(request.query.limit || 24)), html, page));
       return;
     }
