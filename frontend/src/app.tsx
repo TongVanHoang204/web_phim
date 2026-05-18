@@ -703,6 +703,10 @@ function actualTimeFromVisible(time: number, duration: number) {
   return Math.min(time + adSkipDuration(), duration || time);
 }
 
+function watchPath(slug: string, episodeSlug?: string) {
+  return `/xem-phim/${slug}${episodeSlug ? `?episode=${episodeSlug}` : ""}`;
+}
+
 function formatPlayerTime(value: number) {
   if (!Number.isFinite(value) || value <= 0) return "0:00";
   const totalSeconds = Math.floor(value);
@@ -1212,10 +1216,7 @@ function MovieDetailPage() {
             ))}
           </div>
           <div className="actions">
-            <Link
-              className="primary-button"
-              to={`/xem-phim/${movie.slug}${latestEpisode ? `?episode=${latestEpisode.slug}&server=${encodeURIComponent(latestEpisode.serverName)}` : ""}`}
-            >
+            <Link className="primary-button" to={watchPath(movie.slug, latestEpisode?.slug)}>
               <Play size={18} fill="currentColor" /> Tập mới nhất
             </Link>
             <Link className="ghost-button" to={`/xem-phim/${movie.slug}`}>
@@ -1262,6 +1263,14 @@ function WatchPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const playerFrameRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    if (!searchParams.has("server")) return;
+    searchParams.delete("server");
+    const nextSearch = searchParams.toString();
+    navigate(`/xem-phim/${slug}${nextSearch ? `?${nextSearch}` : ""}`, { replace: true });
+  }, [navigate, slug]);
 
   useEffect(() => {
     let mounted = true;
@@ -1370,7 +1379,7 @@ function WatchPage() {
     if (!movie) return;
     setActive(episode);
     saveWatchHistory(movie, episode);
-    navigate(`/xem-phim/${movie.slug}?episode=${episode.slug}&server=${encodeURIComponent(episode.serverName)}`, { replace: true });
+    navigate(watchPath(movie.slug, episode.slug), { replace: true });
   }
 
   return (
