@@ -1255,6 +1255,7 @@ app.use(
   helmet({
     contentSecurityPolicy: false,
     crossOriginEmbedderPolicy: false,
+    xFrameOptions: false,
   }),
 );
 app.use(
