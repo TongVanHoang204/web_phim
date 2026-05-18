@@ -1803,7 +1803,7 @@ async function proxyStreamfreeRequest(request: express.Request, response: expres
       html = neutralizeDebuggerScript(html);
       response.setHeader(
         "content-security-policy",
-        "default-src 'self' data: blob: https: http:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https: http:; media-src 'self' data: blob: https: http:; connect-src 'self' https: http:; worker-src 'self' blob:; frame-ancestors 'self'",
+        `default-src 'self' data: blob: https: http:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https: http:; media-src 'self' data: blob: https: http:; connect-src 'self' https: http:; worker-src 'self' blob:; frame-ancestors 'self' ${clientUrl}`,
       );
       response.type("text/html").send(html);
       return;
