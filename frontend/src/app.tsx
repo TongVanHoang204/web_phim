@@ -1365,7 +1365,7 @@ function WatchPage() {
   const activeIndex = currentServerEpisodes.findIndex((episode) => episode.link_embed === active.link_embed);
   const previousEpisode = activeIndex > 0 ? currentServerEpisodes[activeIndex - 1] : null;
   const nextEpisode = activeIndex >= 0 && activeIndex < currentServerEpisodes.length - 1 ? currentServerEpisodes[activeIndex + 1] : null;
-  const playerEpisode = resolvedActive?.link_m3u8 ? { ...active, ...resolvedActive } : active;
+  const playerEpisode = resolvedActive ? { ...active, ...resolvedActive } : active;
 
   function selectEpisode(episode: ReturnType<typeof flattenEpisodes>[number]) {
     if (!movie) return;
@@ -1403,12 +1403,12 @@ function WatchPage() {
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.08, duration: 0.42 }}
         >
-          {active.open_external ? (
+          {playerEpisode.open_external ? (
             <div className="external-player">
               <Play size={42} fill="currentColor" />
               <h2>Nguồn này không cho phát trực tiếp</h2>
               <p>Tập phim sẽ mở trên trang nguồn gốc để tránh lỗi player.</p>
-              <a className="primary-button" href={active.link_embed} rel="noreferrer" target="_blank">
+              <a className="primary-button" href={playerEpisode.source_url || playerEpisode.fallback_embed || playerEpisode.link_embed} rel="noreferrer" target="_blank">
                 <Play size={18} fill="currentColor" /> Mở tập phim
               </a>
             </div>

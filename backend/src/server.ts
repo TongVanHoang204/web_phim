@@ -473,7 +473,7 @@ function rewriteStreamfreeUrls(value: string) {
 }
 
 const streamfreeDetectorGuardJs =
-  '!function(){try{var n=function(){};["clear","table","log","debug","info","warn","error","dir","trace"].forEach(function(k){try{console[k]=n}catch(e){}});var clean=function(v){return typeof v==="string"?v.replace(/\\bdebugger\\b/g,"void 0"):v};try{var nf=window.Function;window.Function=new Proxy(nf,{apply:function(t,a,r){return Reflect.apply(t,a,Array.prototype.map.call(r,clean))},construct:function(t,r){return Reflect.construct(t,Array.prototype.map.call(r,clean))}})}catch(e){}try{var ne=window.eval;window.eval=function(v){return ne.call(this,clean(v))}}catch(e){}var w=function(){return window.innerWidth},h=function(){return window.innerHeight};try{Object.defineProperty(window,"outerWidth",{get:w,configurable:true})}catch(e){}try{Object.defineProperty(window,"outerHeight",{get:h,configurable:true})}catch(e){}}catch(e){}}();';
+  '!function(){try{var n=function(){};["clear","table","log","debug","info","warn","error","dir","trace"].forEach(function(k){try{console[k]=n}catch(e){}});var isNoise=function(u){u=String(u||"");return /ibyteimg\\.com\\/obj\\/ad-site-i18n|\\/cdn-cgi\\/rum/.test(u)};try{var of=window.fetch;if(of){window.fetch=function(i,o){var u=typeof i==="string"?i:i&&i.url;if(isNoise(u)){return Promise.resolve(new Response("",{status:204,statusText:"No Content"}))}return of.apply(this,arguments)}}}catch(e){}try{var O=XMLHttpRequest.prototype.open,S=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.open=function(m,u){this.__tsverseNoise=isNoise(u);return O.apply(this,arguments)};XMLHttpRequest.prototype.send=function(){if(this.__tsverseNoise){var x=this;setTimeout(function(){try{Object.defineProperty(x,"readyState",{value:4,configurable:true});Object.defineProperty(x,"status",{value:204,configurable:true});Object.defineProperty(x,"statusText",{value:"No Content",configurable:true});Object.defineProperty(x,"responseText",{value:"",configurable:true});Object.defineProperty(x,"response",{value:"",configurable:true});x.onreadystatechange&&x.onreadystatechange(new Event("readystatechange"));x.onload&&x.onload(new Event("load"));x.onloadend&&x.onloadend(new Event("loadend"))}catch(e){}},0);return}return S.apply(this,arguments)}}catch(e){}var clean=function(v){return typeof v==="string"?v.replace(/\\bdebugger\\b/g,"void 0"):v};try{var nf=window.Function;window.Function=new Proxy(nf,{apply:function(t,a,r){return Reflect.apply(t,a,Array.prototype.map.call(r,clean))},construct:function(t,r){return Reflect.construct(t,Array.prototype.map.call(r,clean))}})}catch(e){}try{var ne=window.eval;window.eval=function(v){return ne.call(this,clean(v))}}catch(e){}var w=function(){return window.innerWidth},h=function(){return window.innerHeight};try{Object.defineProperty(window,"outerWidth",{get:w,configurable:true})}catch(e){}try{Object.defineProperty(window,"outerHeight",{get:h,configurable:true})}catch(e){}}catch(e){}}();';
 const streamfreeDetectorGuard = '<script src="/streamfree-guard.js"></script>';
 
 function neutralizeDebuggerScript(value: string) {
@@ -1641,7 +1641,7 @@ app.get("/api/episodes/:episodeId", async (request, response) => {
         playerType: "iframe",
         link_embed: proxiedEmbed || fallbackEmbed,
         fallback_embed: directEmbed || fallbackEmbed,
-        open_external: false,
+        open_external: Boolean(directEmbed),
       },
     });
   } catch (error) {
