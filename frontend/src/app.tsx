@@ -26,6 +26,7 @@ import {
 import {
   getCategories,
   getCountries,
+  getEpisodePlayer,
   getLatestMovies,
   getMovieDetail,
   getMovies,
@@ -987,12 +988,25 @@ function HlsVideoPlayer({
 
   if (!episode.link_m3u8) {
     return (
-      <iframe
-        src={episode.link_embed}
-        aria-label={title}
-        allow="autoplay; fullscreen; picture-in-picture"
-        allowFullScreen
-      />
+      <div className="iframe-player">
+        <iframe
+          src={episode.link_embed}
+          aria-label={title}
+          allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+          allowFullScreen
+          referrerPolicy="unsafe-url"
+        />
+        <div className="iframe-player-actions">
+          <a href={episode.link_embed} rel="noreferrer" target="_blank">
+            <Play size={16} fill="currentColor" /> Mở player
+          </a>
+          {episode.fallback_embed && episode.fallback_embed !== episode.link_embed ? (
+            <a href={episode.fallback_embed} rel="noreferrer" target="_blank">
+              Player dự phòng
+            </a>
+          ) : null}
+        </div>
+      </div>
     );
   }
 
@@ -1236,6 +1250,7 @@ function WatchPage() {
   const [episodes, setEpisodes] = useState<ReturnType<typeof flattenEpisodes>>([]);
   const [episodeServers, setEpisodeServers] = useState<{ server_name: string; server_data: EpisodeItem[] }[]>([]);
   const [active, setActive] = useState<ReturnType<typeof flattenEpisodes>[number] | null>(null);
+  const [resolvedActive, setResolvedActive] = useState<EpisodeItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const playerFrameRef = useRef<HTMLDivElement | null>(null);
@@ -1281,6 +1296,29 @@ function WatchPage() {
   }, [slug]);
 
   useEffect(() => {
+    let mounted = true;
+    setResolvedActive(null);
+
+    if (!active?._id || active.link_m3u8 || active.open_external) return () => {
+      mounted = false;
+    };
+
+    void getEpisodePlayer(active._id)
+      .then((episode) => {
+        if (mounted && episode?.link_embed) {
+          setResolvedActive({ ...active, ...episode });
+        }
+      })
+      .catch(() => {
+        if (mounted) setResolvedActive(null);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [active]);
+
+  useEffect(() => {
     function isTypingTarget(target: EventTarget | null) {
       const element = target as HTMLElement | null;
       if (!element) return false;
@@ -1318,6 +1356,7 @@ function WatchPage() {
   const activeIndex = currentServerEpisodes.findIndex((episode) => episode.link_embed === active.link_embed);
   const previousEpisode = activeIndex > 0 ? currentServerEpisodes[activeIndex - 1] : null;
   const nextEpisode = activeIndex >= 0 && activeIndex < currentServerEpisodes.length - 1 ? currentServerEpisodes[activeIndex + 1] : null;
+  const playerEpisode = resolvedActive || active;
 
   function selectEpisode(episode: ReturnType<typeof flattenEpisodes>[number]) {
     if (!movie) return;
@@ -1366,7 +1405,7 @@ function WatchPage() {
             </div>
           ) : (
             <HlsVideoPlayer
-              episode={active}
+              episode={playerEpisode}
               title={`${displayText(movie.name)} - ${displayText(active.name)}`}
               hasNextEpisode={Boolean(nextEpisode)}
               hasPreviousEpisode={Boolean(previousEpisode)}

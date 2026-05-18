@@ -447,6 +447,16 @@ function hhkungfuProxyPlayerUrl(postId: string, chapter: string, type: string, s
   return `${url.pathname}${url.search}`;
 }
 
+function parseIframeSrc(html: string) {
+  const src = html.match(/<iframe\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/i)?.[1];
+  if (!src) return "";
+  try {
+    return String(new URL(decodeHtml(src), hhkungfuBaseUrl));
+  } catch {
+    return "";
+  }
+}
+
 function encodeEpisodeId(postId: string, chapter: string, type: string, sv: string) {
   return Buffer.from(JSON.stringify({ postId, chapter, type, sv }), "utf8").toString("base64url");
 }
@@ -1580,16 +1590,41 @@ app.get("/api/episodes/:episodeId", async (request, response) => {
     return;
   }
 
-  response.json({
-    status: true,
-    source: "HHKUNGFU",
-    episode: {
-      _id: request.params.episodeId,
-      playerType: "iframe",
-      link_embed: hhkungfuProxyPlayerUrl(String(episode.postId), String(episode.chapter), String(episode.type), String(episode.sv)),
-      open_external: false,
-    },
-  });
+  const fallbackEmbed = hhkungfuProxyPlayerUrl(String(episode.postId), String(episode.chapter), String(episode.type), String(episode.sv));
+
+  try {
+    const playerHtml = await fetchHhkungfuPlayerHtml({
+      postId: String(episode.postId),
+      chapter: String(episode.chapter),
+      type: String(episode.type),
+      sv: String(episode.sv),
+    });
+    const directEmbed = parseIframeSrc(playerHtml);
+
+    response.json({
+      status: true,
+      source: "HHKUNGFU",
+      episode: {
+        _id: request.params.episodeId,
+        playerType: "iframe",
+        link_embed: directEmbed || fallbackEmbed,
+        fallback_embed: fallbackEmbed,
+        open_external: false,
+      },
+    });
+  } catch (error) {
+    response.json({
+      status: true,
+      source: "HHKUNGFU",
+      episode: {
+        _id: request.params.episodeId,
+        playerType: "iframe",
+        link_embed: fallbackEmbed,
+        open_external: false,
+      },
+      detail: errorDetail(error),
+    });
+  }
 });
 
 app.get("/api/animehay/player/:episodeId", async (request, response) => {

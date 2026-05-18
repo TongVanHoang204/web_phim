@@ -1142,6 +1142,47 @@ a {
   background: #020617;
 }
 
+.iframe-player {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #020617;
+}
+
+.iframe-player-actions {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  opacity: 1;
+  transition: opacity 160ms ease;
+}
+
+.iframe-player:hover .iframe-player-actions,
+.iframe-player:focus-within .iframe-player-actions {
+  opacity: 1;
+}
+
+.iframe-player-actions a {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  background: rgba(2, 6, 23, 0.84);
+  color: white;
+  font-size: 13px;
+  font-weight: 850;
+  text-decoration: none;
+  backdrop-filter: blur(14px);
+}
+
 .player-frame:fullscreen {
   width: 100vw;
   height: 100vh;
@@ -1152,6 +1193,7 @@ a {
 }
 
 .player-frame:fullscreen iframe,
+.player-frame:fullscreen .iframe-player,
 .player-frame:fullscreen .native-video {
   width: 100%;
   height: 100%;

@@ -1,5 +1,5 @@
 import axios from "axios";
-import type { EpisodeServer, Movie, MovieDetailResponse, MovieResponse, Taxonomy } from "../@types/movie";
+import type { EpisodeItem, EpisodeServer, Movie, MovieDetailResponse, MovieResponse, Taxonomy } from "../@types/movie";
 
 export type WatchHistoryPayload = {
   name: string;
@@ -209,6 +209,11 @@ export async function getMovieDetail(slug: string) {
     movie: movie ? normalizeMovie(movie) : undefined,
     episodes: episodeData.episodes || episodeData.data?.episodes || [],
   };
+}
+
+export async function getEpisodePlayer(episodeId: string) {
+  const { data } = await localClient.get<{ episode?: EpisodeItem }>(`/api/episodes/${episodeId}`);
+  return data.episode;
 }
 
 export async function getWatchHistory() {
