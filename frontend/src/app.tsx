@@ -65,7 +65,7 @@ const DEFAULT_PAGINATION: PaginationInfo = {
   totalPages: 1,
 };
 const HOME_MOVIE_DISPLAY_LIMIT = 20;
-const HOME_MOVIE_FETCH_LIMIT = 40;
+const HOME_MOVIE_FETCH_LIMIT = 24;
 const AD_SKIP_START_SECONDS = 14 * 60 + 58;
 const AD_SKIP_END_SECONDS = 15 * 60 + 35;
 

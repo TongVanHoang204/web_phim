@@ -76,8 +76,8 @@ function isBlockedTaxonomy(item: Taxonomy) {
   return BLOCKED_TAXONOMY_SLUGS.has(slug) || BLOCKED_TAXONOMY_NAMES.some((keyword) => name.includes(keyword.toLowerCase()));
 }
 
-export async function getLatestMovies(page = 1) {
-  return getMovies({ page, limit: 40, source: "all" });
+export async function getLatestMovies(page = 1, limit = 24) {
+  return getMovies({ page, limit, source: "all" });
 }
 
 function apiSourceFromType(type?: string | number) {

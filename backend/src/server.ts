@@ -40,6 +40,78 @@ const apiLimiter = rateLimit({
   message: { status: false, message: "Too many requests" },
 });
 
+type JsonCacheEntry = {
+  body: unknown;
+  expiresAt: number;
+  maxAgeSeconds: number;
+  statusCode: number;
+};
+
+const jsonResponseCache = new Map<string, JsonCacheEntry>();
+const JSON_RESPONSE_CACHE_LIMIT = Number(process.env.JSON_RESPONSE_CACHE_LIMIT || 300);
+
+function movieApiCacheTtl(request: express.Request) {
+  if (request.method !== "GET" || !request.path.startsWith("/api/movies")) return 0;
+
+  if (request.path === "/api/movies/categories") return 30 * 60 * 1000;
+  if (request.path.includes("/search")) return 5 * 60 * 1000;
+  if (request.path.endsWith("/episodes")) return 2 * 60 * 1000;
+  if (/^\/api\/movies\/[^/]+$/.test(request.path)) return 10 * 60 * 1000;
+  return 3 * 60 * 1000;
+}
+
+function cacheKeyFor(request: express.Request) {
+  return `${request.method}:${request.originalUrl}`;
+}
+
+function trimJsonResponseCache() {
+  while (jsonResponseCache.size > JSON_RESPONSE_CACHE_LIMIT) {
+    const firstKey = jsonResponseCache.keys().next().value;
+    if (!firstKey) return;
+    jsonResponseCache.delete(firstKey);
+  }
+}
+
+function cacheMovieApiJsonResponses(request: express.Request, response: express.Response, next: express.NextFunction) {
+  const ttl = movieApiCacheTtl(request);
+  if (!ttl) {
+    next();
+    return;
+  }
+
+  const key = cacheKeyFor(request);
+  const now = Date.now();
+  const cached = jsonResponseCache.get(key);
+  if (cached && cached.expiresAt > now) {
+    response.setHeader("cache-control", `public, max-age=${cached.maxAgeSeconds}`);
+    response.setHeader("x-tsverse-cache", "HIT");
+    response.status(cached.statusCode).json(cached.body);
+    return;
+  }
+
+  if (cached) jsonResponseCache.delete(key);
+
+  const originalJson = response.json.bind(response);
+  response.json = ((body?: unknown) => {
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      const maxAgeSeconds = Math.max(1, Math.floor(ttl / 1000));
+      jsonResponseCache.set(key, {
+        body,
+        expiresAt: Date.now() + ttl,
+        maxAgeSeconds,
+        statusCode: response.statusCode,
+      });
+      trimJsonResponseCache();
+      response.setHeader("cache-control", `public, max-age=${maxAgeSeconds}`);
+      response.setHeader("x-tsverse-cache", "MISS");
+    }
+
+    return originalJson(body);
+  }) as typeof response.json;
+
+  next();
+}
+
 type HhpandaTerm = {
   id: number;
   name: string;
@@ -1564,6 +1636,7 @@ app.use("/public", express.raw({ type: "*/*", limit: "2mb" }));
 app.use("/cdn-cgi", express.raw({ type: "*/*", limit: "2mb" }));
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "64kb" }));
 app.use(morgan("dev"));
+app.use(cacheMovieApiJsonResponses);
 
 app.get("/api/health", (_request, response) => {
   response.json({
