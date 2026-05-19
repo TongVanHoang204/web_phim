@@ -2534,16 +2534,15 @@ app.get("/api/episodes/:episodeId", async (request, response) => {
     });
     const directEmbed = parseIframeSrc(playerHtml);
     const proxiedEmbed = streamfreeProxyUrl(directEmbed);
-    const hhkungfuHls = hhkungfuHlsUrl(request.params.episodeId);
 
     response.json({
       status: true,
       source: "HHKUNGFU",
       episode: {
         _id: request.params.episodeId,
-        playerType: "hls",
+        playerType: hlsFallback ? "hls" : "iframe",
         link_embed: fallbackEmbed,
-        link_m3u8: hlsFallback ? phimApiHlsUrl(request.params.episodeId) : hhkungfuHls,
+        link_m3u8: hlsFallback ? phimApiHlsUrl(request.params.episodeId) : undefined,
         fallback_embed: fallbackEmbed,
         proxied_embed: proxiedEmbed || directEmbed || undefined,
         open_external: false,
@@ -2554,12 +2553,7 @@ app.get("/api/episodes/:episodeId", async (request, response) => {
             server: hlsFallback.server_name,
             episode: hlsFallback.episode.slug || hlsFallback.episode.name,
           }
-          : {
-            source: "HHKungfu Proxy",
-            movie: String(episode.postId),
-            server: "HHKungfu",
-            episode: String(episode.chapter)
-          },
+          : undefined,
       },
     });
   } catch (error) {
@@ -2568,9 +2562,8 @@ app.get("/api/episodes/:episodeId", async (request, response) => {
       source: "HHKUNGFU",
       episode: {
         _id: request.params.episodeId,
-        playerType: "hls",
+        playerType: "iframe",
         link_embed: fallbackEmbed,
-        link_m3u8: hhkungfuHlsUrl(request.params.episodeId),
         open_external: false,
       },
       detail: errorDetail(error),
