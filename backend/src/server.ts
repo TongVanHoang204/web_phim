@@ -1,9 +1,11 @@
 import cors from "cors";
+import { chromium, Browser } from "playwright";
 import "dotenv/config";
 import express from "express";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import morgan from "morgan";
+import fs from "fs";
 
 const app = express();
 const port = Number(process.env.PORT || 8081);
@@ -31,6 +33,326 @@ type WatchHistoryItem = {
 };
 
 const watchHistoryByIp = new Map<string, WatchHistoryItem[]>();
+
+const hhkungfuM3u8Cache = new Map<string, { url: string; headers: Record<string, string>; expiresAt: number }>();
+let playwrightBrowser: Browser | null = null;
+
+async function resolveHhkungfuHlsWithPlaywright(directEmbedUrl: string, episodeKey: string) {
+  const cached = hhkungfuM3u8Cache.get(episodeKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached;
+  }
+
+  if (!playwrightBrowser) {
+    playwrightBrowser = await chromium.launch({
+      headless: true,
+      args: [
+        "--autoplay-policy=no-user-gesture-required",
+        "--disable-gpu",
+        "--disable-dev-shm-usage",
+        "--no-sandbox",
+        "--disable-site-isolation-trials",
+        "--disable-features=IsolateOrigins,site-per-process",
+        "--disable-web-security"
+      ]
+    });
+  }
+
+  const context = await playwrightBrowser.newContext({
+    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+  });
+
+  await context.setExtraHTTPHeaders({
+    "referer": "https://hhkungfu.ee/",
+    "origin": "https://hhkungfu.ee"
+  });
+
+  const page = await context.newPage();
+
+  const logPath = "playwright.log";
+  fs.writeFileSync(logPath, `--- PLAYWRIGHT SESSION START (${new Date().toISOString()}) ---\n`);
+
+  const appendLog = (line: string) => {
+    try {
+      fs.appendFileSync(logPath, line + "\n");
+    } catch (e) {}
+  };
+
+  page.on("pageerror", (err) => {
+    appendLog(`[PAGEERROR] ${err.name}: ${err.message}\nStack: ${err.stack}`);
+  });
+
+  page.on("requestfailed", (req) => {
+    appendLog(`[REQUESTFAILED] ${req.method()} ${req.url()} ${req.failure()?.errorText || ""}`);
+  });
+
+  await page.addInitScript(() => {
+    try {
+      // 1. Stub iframe check
+      try {
+        var mockParent = new Proxy(window, {
+          get: function(target, prop) {
+            if (prop === "location") {
+              return {
+                href: "https://hhkungfu.ee/",
+                origin: "https://hhkungfu.ee",
+                protocol: "https:",
+                host: "hhkungfu.ee",
+                hostname: "hhkungfu.ee",
+                pathname: "/",
+                search: "",
+                hash: ""
+              };
+            }
+            return (target as unknown as Record<PropertyKey, unknown>)[prop];
+          }
+        });
+
+        try {
+          Object.defineProperty(window, "parent", { get: function() { return mockParent; }, configurable: true });
+        } catch(e) {}
+        try {
+          Object.defineProperty(window, "top", { get: function() { return mockParent; }, configurable: true });
+        } catch(e) {}
+
+        try {
+          Object.defineProperty(Window.prototype, "parent", { get: function() { return mockParent; }, configurable: true });
+        } catch(e) {}
+        try {
+          Object.defineProperty(Window.prototype, "top", { get: function() { return mockParent; }, configurable: true });
+        } catch(e) {}
+
+        try {
+          var proto = Object.getPrototypeOf(window);
+          while (proto) {
+            try {
+              Object.defineProperty(proto, "parent", { get: function() { return mockParent; }, configurable: true });
+            } catch(e) {}
+            try {
+              Object.defineProperty(proto, "top", { get: function() { return mockParent; }, configurable: true });
+            } catch(e) {}
+            proto = Object.getPrototypeOf(proto);
+          }
+        } catch(e) {}
+
+        var dummyFrame = document.createElement("iframe");
+        try {
+          Object.defineProperty(window, "frameElement", { get: function() { return dummyFrame; }, configurable: true });
+        } catch(e) {}
+        try {
+          Object.defineProperty(Window.prototype, "frameElement", { get: function() { return dummyFrame; }, configurable: true });
+        } catch(e) {}
+      } catch(e) {}
+
+      // 2. Completely stub all console methods natively to neutralize devtools detector CDP triggers
+      try {
+        var makeNative = function(fn: Function, name: string) {
+          try {
+            Object.defineProperty(fn, "toString", {
+              value: function() { return "function " + (name || fn.name) + "() { [native code] }"; },
+              configurable: true
+            });
+          } catch(e) {}
+          return fn;
+        };
+        var noop = function() {};
+        var mockConsole: Record<string, Function> = {};
+        var props = ["log", "table", "clear", "dir", "group", "groupCollapsed", "groupEnd", "trace", "warn", "info", "error"];
+        props.forEach(function(p) {
+          mockConsole[p] = makeNative(noop, p);
+        });
+        window.console = mockConsole as unknown as Console;
+      } catch(e) {}
+
+      // 3. Cap performance.now() and Date.now() timing jumps to defeat date-delay/timing checks
+      try {
+        var realNow = window.performance.now.bind(window.performance);
+        var lastTime = realNow();
+        window.performance.now = function() {
+          var current = realNow();
+          if (current - lastTime > 100) {
+            lastTime += 1;
+          } else {
+            lastTime = current;
+          }
+          return lastTime;
+        };
+      } catch(e) {}
+      try {
+        var realDateNow = Date.now;
+        var lastDate = realDateNow();
+        Date.now = function() {
+          var current = realDateNow();
+          if (current - lastDate > 100) {
+            lastDate += 1;
+          } else {
+            lastDate = current;
+          }
+          return lastDate;
+        };
+      } catch(e) {}
+
+      // 4. Strip dynamic debugger statements
+      try {
+        var nativeFunc = window.Function;
+        (window as unknown as { Function: FunctionConstructor }).Function = (function(this: unknown) {
+          var args = Array.prototype.slice.call(arguments);
+          if (args.length > 0 && typeof args[args.length - 1] === "string") {
+            var body = args[args.length - 1];
+            if (body.includes("debugger")) {
+              args[args.length - 1] = body.replace(/\bdebugger\b/g, "/* debugger neutralized */");
+            }
+          }
+          return nativeFunc.apply(this, args);
+        }) as unknown as FunctionConstructor;
+        ((window as unknown as { Function: FunctionConstructor }).Function as unknown as { prototype: Function["prototype"] }).prototype = nativeFunc.prototype;
+      } catch(e) {}
+
+      // 5. Neutralize webdriver
+      try {
+        Object.defineProperty(navigator, "webdriver", {
+          get: function() { return false; },
+          configurable: true
+        });
+      } catch(e) {}
+
+      // 6. Mock real Chrome object
+      try {
+        (window as unknown as { chrome: unknown }).chrome = {
+          app: {
+            isInstalled: false,
+            InstallState: { DISABLED: "disabled", INSTALLED: "installed", NOT_INSTALLED: "not_installed" },
+            RunningState: { CANNOT_RUN: "cannot_run", READY_TO_RUN: "ready_to_run", RUNNING: "running" },
+            getDetails: function() {},
+            getIsInstalled: function() {},
+            install: function() {}
+          },
+          runtime: {
+            OnInstalledReason: { INSTALL: "install", UPDATE: "update", SHARED_MODULE_UPDATE: "shared_module_update", UPDATE_AVAILABLE: "update_available" },
+            OnRestartRequiredReason: { APP_UPDATE: "app_update", OS_UPDATE: "os_update", PERIODIC: "periodic" },
+            PlatformArch: { ARM: "arm", ARM64: "arm64", MIPS: "mips", MIPS64: "mips64", X86_32: "x86-32", X86_64: "x86-64" },
+            PlatformNaclArch: { ARM: "arm", MIPS: "mips", MIPS64: "mips64", X86_32: "x86-32", X86_64: "x86-64" },
+            PlatformOS: { ANDROID: "android", CROS: "cros", LINUX: "linux", MAC: "mac", OPENBSD: "openbsd", WIN: "win" },
+            RequestUpdateCheckStatus: { NO_UPDATE: "no_update", UPDATE_AVAILABLE: "update_available", THROTTLED: "throttled" }
+          }
+        };
+      } catch(e) {}
+
+      // 7. Align window dimensions
+      try {
+        var w = function() { return window.innerWidth; };
+        var h = function() { return window.innerHeight; };
+        Object.defineProperty(window, "outerWidth", { get: w, configurable: true });
+        Object.defineProperty(window, "outerHeight", { get: h, configurable: true });
+        Object.defineProperty(Window.prototype, "outerWidth", { get: w, configurable: true });
+        Object.defineProperty(Window.prototype, "outerHeight", { get: h, configurable: true });
+      } catch(e) {}
+    } catch(e) {}
+  });
+
+  // Intercept all network requests to inject the referer header securely
+  await page.route("**/*", async (route) => {
+    const req = route.request();
+    const url = req.url();
+    const type = req.resourceType();
+    if (url.includes("streamfree.vip") && (type === "document" || url.includes(".m3u8"))) {
+      const headers = {
+        ...req.headers(),
+        "referer": "https://hhkungfu.ee/",
+        "origin": "https://hhkungfu.ee"
+      };
+      await route.continue({ headers });
+    } else {
+      await route.continue();
+    }
+  });
+
+  page.on("request", (req) => {
+    const url = req.url();
+    appendLog(`[REQUEST] ${req.method()} ${url}`);
+  });
+
+  page.on("response", (res) => {
+    const url = res.url();
+    appendLog(`[RESPONSE] ${res.status()} ${url}`);
+  });
+
+  const resultPromise = new Promise<{ url: string; headers: Record<string, string> }>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error("Timeout waiting for m3u8 stream"));
+    }, 15000);
+
+    page.on("request", (req) => {
+      const url = req.url();
+      if (url.includes(".m3u8")) {
+        clearTimeout(timeout);
+        const headers = req.headers();
+        resolve({
+          url,
+          headers: {
+            "user-agent": headers["user-agent"] || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+            "referer": "https://hhkungfu.ee/",
+            "origin": "https://streamfree.vip"
+          }
+        });
+      }
+    });
+  });
+  resultPromise.catch(() => {});
+
+  try {
+    // Navigate to the secure localhost context player-frame URL
+    const playerFrameUrl = `http://localhost:8081/api/hhkungfu/player-frame?url=${encodeURIComponent(directEmbedUrl)}`;
+    await page.goto(playerFrameUrl, { waitUntil: "domcontentloaded" });
+
+    // Wait for the iframe and player scripts to load
+    await page.waitForTimeout(3000);
+
+    // Attempt multi-layered play triggers inside the iframe frame context
+    const frame = page.frames().find(f => f.url().includes("streamfree.vip"));
+    if (frame) {
+      await frame.evaluate(() => {
+        try {
+          if (typeof (window as any).jwplayer === "function") {
+            (window as any).jwplayer().play();
+          } else {
+            const v = document.querySelector("video");
+            if (v) v.play();
+          }
+        } catch (e) {}
+      }).catch(() => {});
+    }
+
+    // Also attempt center coordinate click of the player iframe
+    try {
+      const frameElement = await page.$("iframe");
+      if (frameElement) {
+        const box = await frameElement.boundingBox();
+        if (box) {
+          await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+        }
+      }
+    } catch (e) {}
+
+    const result = await resultPromise;
+    
+    const entry = {
+      url: result.url,
+      headers: result.headers,
+      expiresAt: Date.now() + 3600 * 1000
+    };
+    hhkungfuM3u8Cache.set(episodeKey, entry);
+
+    return entry;
+  } catch (error) {
+    try {
+      await page.screenshot({ path: "c:\\Users\\Hoang\\Desktop\\Working brooo\\TSVERSE\\backend\\playwright_timeout.png" });
+    } catch (e) {}
+    throw error;
+  } finally {
+    await context.close().catch(() => {});
+  }
+}
 
 const apiLimiter = rateLimit({
   windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000),
@@ -612,7 +934,7 @@ function rewriteStreamfreeUrls(value: string) {
 }
 
 const streamfreeDetectorGuardJs =
-  '!function(){try{var n=function(){};["clear","table","log","debug","info","warn","error","dir","trace"].forEach(function(k){try{console[k]=n}catch(e){}});var isNoise=function(u){u=String(u||"");return /ibyteimg\\.com\\/obj\\/ad-site-i18n|\\/cdn-cgi\\/rum/.test(u)};try{var of=window.fetch;if(of){window.fetch=function(i,o){var u=typeof i==="string"?i:i&&i.url;if(isNoise(u)){return Promise.resolve(new Response("",{status:204,statusText:"No Content"}))}return of.apply(this,arguments)}}}catch(e){}try{var O=XMLHttpRequest.prototype.open,S=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.open=function(m,u){this.__tsverseNoise=isNoise(u);return O.apply(this,arguments)};XMLHttpRequest.prototype.send=function(){if(this.__tsverseNoise){var x=this;setTimeout(function(){try{Object.defineProperty(x,"readyState",{value:4,configurable:true});Object.defineProperty(x,"status",{value:204,configurable:true});Object.defineProperty(x,"statusText",{value:"No Content",configurable:true});Object.defineProperty(x,"responseText",{value:"",configurable:true});Object.defineProperty(x,"response",{value:"",configurable:true});x.onreadystatechange&&x.onreadystatechange(new Event("readystatechange"));x.onload&&x.onload(new Event("load"));x.onloadend&&x.onloadend(new Event("loadend"))}catch(e){}},0);return}return S.apply(this,arguments)}}catch(e){}var clean=function(v){return typeof v==="string"?v.replace(/\\bdebugger\\b/g,"void 0"):v};try{var nf=window.Function;window.Function=new Proxy(nf,{apply:function(t,a,r){return Reflect.apply(t,a,Array.prototype.map.call(r,clean))},construct:function(t,r){return Reflect.construct(t,Array.prototype.map.call(r,clean))}})}catch(e){}try{var ne=window.eval;window.eval=function(v){return ne.call(this,clean(v))}}catch(e){}var w=function(){return window.innerWidth},h=function(){return window.innerHeight};try{Object.defineProperty(window,"outerWidth",{get:w,configurable:true})}catch(e){}try{Object.defineProperty(window,"outerHeight",{get:h,configurable:true})}catch(e){}}catch(e){}}();';
+  '!function(){try{var n=function(){};["clear","table","log","info","debug","dir","warn","error","trace"].forEach(function(k){try{console[k]=n}catch(e){}});var isNoise=function(u){u=String(u||"");return /ibyteimg\\.com\\/obj\\/ad-site-i18n|\\/cdn-cgi\\/rum/.test(u)};try{var of=window.fetch;if(of){window.fetch=function(i,o){var u=typeof i==="string"?i:i&&i.url;if(isNoise(u)){return Promise.resolve(new Response("",{status:204,statusText:"No Content"}))}return of.apply(this,arguments)}}}catch(e){}try{var O=XMLHttpRequest.prototype.open,S=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.open=function(m,u){this.__tsverseNoise=isNoise(u);return O.apply(this,arguments)};XMLHttpRequest.prototype.send=function(){if(this.__tsverseNoise){var x=this;setTimeout(function(){try{Object.defineProperty(x,"readyState",{value:4,configurable:true});Object.defineProperty(x,"status",{value:204,configurable:true});Object.defineProperty(x,"statusText",{value:"No Content",configurable:true});Object.defineProperty(x,"responseText",{value:"",configurable:true});Object.defineProperty(x,"response",{value:"",configurable:true});x.onreadystatechange&&x.onreadystatechange(new Event("readystatechange"));x.onload&&x.onload(new Event("load"));x.onloadend&&x.onloadend(new Event("loadend"))}catch(e){}},0);return}return S.apply(this,arguments)}}catch(e){}var clean=function(v){return typeof v==="string"?v.replace(/\\bdebugger\\b/g,"void 0"):v};try{var nf=window.Function;window.Function=new Proxy(nf,{apply:function(t,a,r){return Reflect.apply(t,a,Array.prototype.map.call(r,clean))},construct:function(t,r){return Reflect.construct(t,Array.prototype.map.call(r,clean))}})}catch(e){}try{var ne=window.eval;window.eval=function(v){return ne.call(this,clean(v))}}catch(e){}var w=function(){return window.innerWidth},h=function(){return window.innerHeight};try{Object.defineProperty(window,"outerWidth",{get:w,configurable:true})}catch(e){}try{Object.defineProperty(window,"outerHeight",{get:h,configurable:true})}catch(e){}try{Object.defineProperty(navigator,"webdriver",{get:function(){return false},configurable:true})}catch(e){}}catch(e){}}();';
 const streamfreeDetectorGuard = '<script src="/streamfree-guard.js"></script>';
 
 function neutralizeDebuggerScript(value: string) {
@@ -1317,6 +1639,14 @@ function phimApiHlsUrl(episodeId: string) {
 
 function phimApiHlsProxyUrl(url: string) {
   return `/api/phimapi/hls-proxy?url=${encodeURIComponent(url)}`;
+}
+
+function hhkungfuHlsUrl(episodeId: string) {
+  return `/api/hhkungfu/hls/${episodeId}`;
+}
+
+function hhkungfuHlsProxyUrl(url: string) {
+  return `/api/hhkungfu/hls-proxy?url=${encodeURIComponent(url)}`;
 }
 
 function assertAllowedAnimehayMediaUrl(value: string) {
@@ -2204,15 +2534,16 @@ app.get("/api/episodes/:episodeId", async (request, response) => {
     });
     const directEmbed = parseIframeSrc(playerHtml);
     const proxiedEmbed = streamfreeProxyUrl(directEmbed);
+    const hhkungfuHls = hhkungfuHlsUrl(request.params.episodeId);
 
     response.json({
       status: true,
       source: "HHKUNGFU",
       episode: {
         _id: request.params.episodeId,
-        playerType: hlsFallback ? "hls" : "iframe",
+        playerType: "hls",
         link_embed: fallbackEmbed,
-        link_m3u8: hlsFallback ? phimApiHlsUrl(request.params.episodeId) : undefined,
+        link_m3u8: hlsFallback ? phimApiHlsUrl(request.params.episodeId) : hhkungfuHls,
         fallback_embed: fallbackEmbed,
         proxied_embed: proxiedEmbed || directEmbed || undefined,
         open_external: false,
@@ -2223,7 +2554,12 @@ app.get("/api/episodes/:episodeId", async (request, response) => {
             server: hlsFallback.server_name,
             episode: hlsFallback.episode.slug || hlsFallback.episode.name,
           }
-          : undefined,
+          : {
+            source: "HHKungfu Proxy",
+            movie: String(episode.postId),
+            server: "HHKungfu",
+            episode: String(episode.chapter)
+          },
       },
     });
   } catch (error) {
@@ -2232,8 +2568,9 @@ app.get("/api/episodes/:episodeId", async (request, response) => {
       source: "HHKUNGFU",
       episode: {
         _id: request.params.episodeId,
-        playerType: "iframe",
+        playerType: "hls",
         link_embed: fallbackEmbed,
+        link_m3u8: hhkungfuHlsUrl(request.params.episodeId),
         open_external: false,
       },
       detail: errorDetail(error),
@@ -2311,6 +2648,150 @@ app.get("/api/phimapi/hls-proxy", async (request, response) => {
     response.type(contentType || "application/octet-stream").send(bytes);
   } catch (error) {
     response.status(502).type("text/plain").send(errorDetail(error) || "Cannot proxy PhimAPI media");
+  }
+});
+
+app.get("/api/hhkungfu/player-frame", (request, response) => {
+  const embedUrl = String(request.query.url || "");
+  response.type("text/html").send(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          html, body, iframe {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            border: none;
+            overflow: hidden;
+          }
+        </style>
+      </head>
+      <body>
+        <iframe src="${embedUrl}"></iframe>
+      </body>
+    </html>
+  `);
+});
+
+app.get("/api/hhkungfu/hls/:episodeId", async (request, response) => {
+  const episode = decodeEpisodeId(String(request.params.episodeId));
+
+  if (!episode) {
+    response.status(400).type("text/plain").send("Invalid HHKungfu HLS request");
+    return;
+  }
+
+  const sendPhimApiFallback = async () => {
+    const resolved = await resolveHhkungfuPhimApiHls({
+      postId: String(episode.postId),
+      chapter: String(episode.chapter),
+    });
+    const m3u8Url = resolved?.episode.link_m3u8;
+    if (!m3u8Url) return false;
+
+    const url = assertAllowedPhimApiMediaUrl(m3u8Url);
+    const result = await fetch(url, {
+      headers: {
+        accept: "application/vnd.apple.mpegurl,*/*",
+        referer: upstreamBaseUrl,
+        "user-agent": "Mozilla/5.0 (compatible; TSVERSE/0.1)",
+      },
+    });
+
+    if (!result.ok) throw new Error(`PhimAPI HLS returned ${result.status}`);
+    const playlist = await result.text();
+    response.setHeader("cache-control", "no-store");
+    response.setHeader("x-hls-source", "phimapi");
+    response.type("application/vnd.apple.mpegurl").send(rewriteM3u8PlaylistWithProxy(playlist, url, phimApiHlsProxyUrl));
+    return true;
+  };
+
+  try {
+    const playerHtml = await fetchHhkungfuPlayerHtml({
+      postId: String(episode.postId),
+      chapter: String(episode.chapter),
+      type: String(episode.type),
+      sv: String(episode.sv),
+    });
+    let directEmbed = playerHtml.match(/<iframe\b[^>]+src=["']([^"']+)["']/i)?.[1] || "";
+    if (directEmbed) {
+      try {
+        if (!directEmbed.startsWith("http")) {
+          directEmbed = String(new URL(decodeHtml(directEmbed), "https://streamfree.vip/"));
+        } else {
+          directEmbed = decodeHtml(directEmbed);
+        }
+      } catch (e) {}
+    }
+    console.log(`[HLS RESOLVER] Resolved directEmbed URL: ${directEmbed}`);
+    
+    if (!directEmbed) {
+      response.status(404).type("text/plain").send("Cannot resolve player embed");
+      return;
+    }
+
+    const resolved = await resolveHhkungfuHlsWithPlaywright(directEmbed, request.params.episodeId);
+    
+    const result = await fetch(resolved.url, {
+      headers: {
+        accept: "application/vnd.apple.mpegurl,*/*",
+        ...resolved.headers
+      },
+    });
+
+    if (!result.ok) throw new Error(`HHKungfu HLS returned ${result.status}`);
+    const playlist = await result.text();
+    response.setHeader("cache-control", "no-store");
+    response.type("application/vnd.apple.mpegurl").send(rewriteM3u8PlaylistWithProxy(playlist, new URL(resolved.url), hhkungfuHlsProxyUrl));
+  } catch (error) {
+    try {
+      if (await sendPhimApiFallback()) return;
+    } catch (fallbackError) {
+      response.status(502).type("text/plain").send(errorDetail(fallbackError) || errorDetail(error) || "Cannot load HHKungfu HLS");
+      return;
+    }
+
+    response.status(502).type("text/plain").send(errorDetail(error) || "Cannot load HHKungfu HLS");
+  }
+});
+
+app.get("/api/hhkungfu/hls-proxy", async (request, response) => {
+  const rawUrl = String(request.query.url || "");
+
+  if (!rawUrl) {
+    response.status(400).type("text/plain").send("Missing media url");
+    return;
+  }
+
+  try {
+    const url = new URL(rawUrl);
+    const result = await fetch(url, {
+      headers: {
+        accept: "*/*",
+        referer: "https://hhkungfu.ee/",
+        origin: "https://streamfree.vip",
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+      },
+    });
+
+    if (!result.ok) throw new Error(`HHKungfu media returned ${result.status}`);
+
+    const contentType = result.headers.get("content-type") || "";
+    response.setHeader("cache-control", "public, max-age=300");
+
+    if (contentType.includes("mpegurl") || url.pathname.endsWith(".m3u8")) {
+      const playlist = await result.text();
+      response.type("application/vnd.apple.mpegurl").send(rewriteM3u8PlaylistWithProxy(playlist, url, hhkungfuHlsProxyUrl));
+      return;
+    }
+
+    const bytes = Buffer.from(await result.arrayBuffer());
+    response.type(contentType || "application/octet-stream").send(bytes);
+  } catch (error) {
+    response.status(502).type("text/plain").send(errorDetail(error) || "Cannot proxy HHKungfu media");
   }
 });
 
