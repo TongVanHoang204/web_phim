@@ -2204,7 +2204,7 @@ app.get("/api/episodes/:episodeId", async (request, response) => {
     });
     const directEmbed = parseIframeSrc(playerHtml);
     const proxiedEmbed = streamfreeProxyUrl(directEmbed);
-    const mustOpenAtSource = !hlsFallback && Boolean(directEmbed);
+
     response.json({
       status: true,
       source: "HHKUNGFU",
@@ -2215,14 +2215,14 @@ app.get("/api/episodes/:episodeId", async (request, response) => {
         link_m3u8: hlsFallback ? phimApiHlsUrl(request.params.episodeId) : undefined,
         fallback_embed: fallbackEmbed,
         proxied_embed: proxiedEmbed || directEmbed || undefined,
-        open_external: mustOpenAtSource,
+        open_external: false,
         hls_source: hlsFallback
           ? {
-              source: "PhimAPI",
-              movie: hlsFallback.movie?.slug,
-              server: hlsFallback.server_name,
-              episode: hlsFallback.episode.slug || hlsFallback.episode.name,
-            }
+            source: "PhimAPI",
+            movie: hlsFallback.movie?.slug,
+            server: hlsFallback.server_name,
+            episode: hlsFallback.episode.slug || hlsFallback.episode.name,
+          }
           : undefined,
       },
     });
@@ -2441,7 +2441,13 @@ async function proxyStreamfreeRequest(request: express.Request, response: expres
       },
     };
     if (request.method !== "GET" && request.method !== "HEAD" && request.body !== undefined) {
-      init.body = typeof request.body === "string" || Buffer.isBuffer(request.body) ? request.body : JSON.stringify(request.body);
+      if (Buffer.isBuffer(request.body)) {
+        const bodyBytes = new Uint8Array(request.body.byteLength);
+        bodyBytes.set(request.body);
+        init.body = bodyBytes;
+      } else {
+        init.body = typeof request.body === "string" ? request.body : JSON.stringify(request.body);
+      }
     }
 
     const result = await fetch(url, init);
