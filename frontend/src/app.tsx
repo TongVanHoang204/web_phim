@@ -5,7 +5,6 @@ import { Link, Route, Routes, useLocation, useNavigate, useParams } from "react-
 import {
   ArrowLeft,
   ChevronDown,
-  ExternalLink,
   Film,
   Flame,
   Globe2,
@@ -129,33 +128,6 @@ function displayText(value?: string) {
   }
 
   return decodeHtmlEntities(decodeHtmlEntities(text));
-}
-
-function externalSourceLinks(movie: Movie, episode: EpisodeItem) {
-  const title = displayText(movie.origin_name || movie.name || movie.slug);
-  const localTitle = displayText(movie.name || movie.slug);
-  const episodeLabel = displayText(episode.name || episode.slug);
-  const searchTitle = title || localTitle;
-  const detailedQuery = [searchTitle, episodeLabel].filter(Boolean).join(" ");
-
-  return [
-    {
-      label: "Tencent Video",
-      href: `https://v.qq.com/x/search/?q=${encodeURIComponent(searchTitle || detailedQuery)}`,
-    },
-    {
-      label: "WeTV",
-      href: `https://wetv.vip/search?q=${encodeURIComponent(searchTitle || detailedQuery)}`,
-    },
-    {
-      label: "Plex",
-      href: `https://watch.plex.tv/search?q=${encodeURIComponent(searchTitle || detailedQuery)}`,
-    },
-    {
-      label: "DonghuaStream",
-      href: `https://donghuastream.org/?s=${encodeURIComponent(detailedQuery || searchTitle)}`,
-    },
-  ];
 }
 
 function statusLabel(value?: string) {
@@ -1434,7 +1406,6 @@ function WatchPage() {
   const previousEpisode = activeIndex > 0 ? currentServerEpisodes[activeIndex - 1] : null;
   const nextEpisode = activeIndex >= 0 && activeIndex < currentServerEpisodes.length - 1 ? currentServerEpisodes[activeIndex + 1] : null;
   const playerEpisode = resolvedActive ? { ...active, ...resolvedActive } : active;
-  const externalLinks = playerEpisode.open_external ? externalSourceLinks(movie, playerEpisode) : [];
 
   function selectEpisode(episode: ReturnType<typeof flattenEpisodes>[number]) {
     if (!movie) return;
@@ -1473,21 +1444,7 @@ function WatchPage() {
           transition={{ delay: 0.08, duration: 0.42 }}
         >
           {playerEpisode.open_external ? (
-            <div className="external-player">
-              <Play size={42} fill="currentColor" />
-              <h2>Nguồn này không cho phát trực tiếp</h2>
-              <p>Tập phim sẽ mở trên trang nguồn gốc để tránh lỗi player. TSVERSE sẽ tự kiểm tra lại nguồn phát trực tiếp định kỳ.</p>
-              <a className="primary-button" href={playerEpisode.source_url || playerEpisode.fallback_embed || playerEpisode.link_embed} rel="noreferrer" target="_blank">
-                <Play size={18} fill="currentColor" /> Mở tập phim
-              </a>
-              <div className="external-source-links" aria-label="Nguồn cập nhật khác">
-                {externalLinks.map((link) => (
-                  <a href={link.href} key={link.label} rel="noreferrer" target="_blank">
-                    {link.label} <ExternalLink size={14} />
-                  </a>
-                ))}
-              </div>
-            </div>
+            <div className="external-player" aria-hidden="true" />
           ) : (
             <HlsVideoPlayer
               episode={playerEpisode}
