@@ -2534,6 +2534,7 @@ app.get("/api/episodes/:episodeId", async (request, response) => {
     });
     const directEmbed = parseIframeSrc(playerHtml);
     const proxiedEmbed = streamfreeProxyUrl(directEmbed);
+    const hhkungfuHls = hhkungfuHlsUrl(request.params.episodeId);
 
     response.json({
       status: true,
@@ -2542,7 +2543,7 @@ app.get("/api/episodes/:episodeId", async (request, response) => {
         _id: request.params.episodeId,
         playerType: hlsFallback ? "hls" : "iframe",
         link_embed: fallbackEmbed,
-        link_m3u8: hlsFallback ? phimApiHlsUrl(request.params.episodeId) : undefined,
+        link_m3u8: hlsFallback ? hhkungfuHls : undefined,
         fallback_embed: fallbackEmbed,
         proxied_embed: proxiedEmbed || directEmbed || undefined,
         open_external: false,
