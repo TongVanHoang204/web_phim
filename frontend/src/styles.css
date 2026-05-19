@@ -4144,8 +4144,18 @@ iframe {
   position: relative;
 }
 
+.nav-dropdown::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  width: min(690px, calc(100vw - 40px));
+  height: 16px;
+  transform: translateX(-50%);
+}
+
 .dropdown-menu {
-  top: calc(100% + 10px);
+  top: calc(100% + 2px);
   right: auto;
   left: 50%;
   display: grid;
@@ -4157,7 +4167,7 @@ iframe {
   border-radius: 16px;
   opacity: 0;
   pointer-events: none;
-  transform: translate(-50%, 8px);
+  transform: translate(-50%, 4px);
 }
 
 .nav-dropdown:hover .dropdown-menu,
