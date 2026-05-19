@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import Hls from "hls.js";
 import { Link, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
@@ -787,7 +787,7 @@ function HlsVideoPlayer({
   const [paused, setPaused] = useState(true);
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(1);
-  const [iframeTimedOut, setIframeTimedOut] = useState(false);
+
 
   function clearHideControlsTimer() {
     if (hideControlsTimer.current) {
@@ -1014,12 +1014,7 @@ function HlsVideoPlayer({
     return undefined;
   }, [episode.link_m3u8]);
 
-  useEffect(() => {
-    if (episode.link_m3u8) return undefined;
-    setIframeTimedOut(false);
-    const timeout = window.setTimeout(() => setIframeTimedOut(true), 25000);
-    return () => window.clearTimeout(timeout);
-  }, [episode.link_embed, episode.link_m3u8]);
+
 
   if (!episode.link_m3u8) {
     const fallbackUrl = episode.source_url || episode.fallback_embed || episode.link_embed;
@@ -1032,15 +1027,6 @@ function HlsVideoPlayer({
           allow="autoplay; encrypted-media; picture-in-picture"
           allowFullScreen
         />
-        {iframeTimedOut ? (
-          <div className="iframe-timeout">
-            <h2>Nguồn này đang không phát được trực tiếp</h2>
-            <p>Player nguồn bị kẹt khi chạy qua server deploy. Bạn có thể mở tập phim bằng nguồn dự phòng.</p>
-            <a href={fallbackUrl} rel="noreferrer" target="_blank">
-              <Play size={18} fill="currentColor" /> Mở nguồn dự phòng
-            </a>
-          </div>
-        ) : null}
       </div>
     );
   }
