@@ -5,6 +5,7 @@ import { Link, Route, Routes, useLocation, useNavigate, useParams } from "react-
 import {
   ArrowLeft,
   ChevronDown,
+  ExternalLink,
   Film,
   Flame,
   Globe2,
@@ -70,6 +71,7 @@ const HOME_MOVIE_DISPLAY_LIMIT = 20;
 const HOME_MOVIE_FETCH_LIMIT = 24;
 const AD_SKIP_START_SECONDS = 14 * 60 + 58;
 const AD_SKIP_END_SECONDS = 15 * 60 + 35;
+const HLS_RETRY_INTERVAL_MS = 2 * 60 * 1000;
 
 const navItems: Array<{ label: string; filter?: HeaderFilter; path?: string; href?: string; isDropdown?: boolean }> = [
   { label: "Trang chủ", filter: "all", path: "/" },
@@ -127,6 +129,33 @@ function displayText(value?: string) {
   }
 
   return decodeHtmlEntities(decodeHtmlEntities(text));
+}
+
+function externalSourceLinks(movie: Movie, episode: EpisodeItem) {
+  const title = displayText(movie.origin_name || movie.name || movie.slug);
+  const localTitle = displayText(movie.name || movie.slug);
+  const episodeLabel = displayText(episode.name || episode.slug);
+  const searchTitle = title || localTitle;
+  const detailedQuery = [searchTitle, episodeLabel].filter(Boolean).join(" ");
+
+  return [
+    {
+      label: "Tencent Video",
+      href: `https://v.qq.com/x/search/?q=${encodeURIComponent(searchTitle || detailedQuery)}`,
+    },
+    {
+      label: "WeTV",
+      href: `https://wetv.vip/search?q=${encodeURIComponent(searchTitle || detailedQuery)}`,
+    },
+    {
+      label: "Plex",
+      href: `https://watch.plex.tv/search?q=${encodeURIComponent(searchTitle || detailedQuery)}`,
+    },
+    {
+      label: "DonghuaStream",
+      href: `https://donghuastream.org/?s=${encodeURIComponent(detailedQuery || searchTitle)}`,
+    },
+  ];
 }
 
 function statusLabel(value?: string) {
@@ -1336,24 +1365,33 @@ function WatchPage() {
 
   useEffect(() => {
     let mounted = true;
+    let retryTimer: number | undefined;
     setResolvedActive(null);
 
-    if (!active?._id || active.link_m3u8 || active.open_external) return () => {
-      mounted = false;
-    };
+    if (!active?._id || active.link_m3u8) {
+      return () => {
+        mounted = false;
+      };
+    }
 
-    void getEpisodePlayer(active._id)
-      .then((episode) => {
+    async function refreshEpisodeSource() {
+      if (!active?._id) return;
+      try {
+        const episode = await getEpisodePlayer(active._id);
         if (mounted && episode?.link_embed) {
           setResolvedActive({ ...active, ...episode });
         }
-      })
-      .catch(() => {
-        if (mounted) setResolvedActive(null);
-      });
+      } catch {
+        if (mounted) setResolvedActive((current) => current);
+      }
+    }
+
+    void refreshEpisodeSource();
+    retryTimer = window.setInterval(refreshEpisodeSource, HLS_RETRY_INTERVAL_MS);
 
     return () => {
       mounted = false;
+      if (retryTimer) window.clearInterval(retryTimer);
     };
   }, [active]);
 
@@ -1396,6 +1434,7 @@ function WatchPage() {
   const previousEpisode = activeIndex > 0 ? currentServerEpisodes[activeIndex - 1] : null;
   const nextEpisode = activeIndex >= 0 && activeIndex < currentServerEpisodes.length - 1 ? currentServerEpisodes[activeIndex + 1] : null;
   const playerEpisode = resolvedActive ? { ...active, ...resolvedActive } : active;
+  const externalLinks = playerEpisode.open_external ? externalSourceLinks(movie, playerEpisode) : [];
 
   function selectEpisode(episode: ReturnType<typeof flattenEpisodes>[number]) {
     if (!movie) return;
@@ -1437,10 +1476,17 @@ function WatchPage() {
             <div className="external-player">
               <Play size={42} fill="currentColor" />
               <h2>Nguồn này không cho phát trực tiếp</h2>
-              <p>Tập phim sẽ mở trên trang nguồn gốc để tránh lỗi player.</p>
+              <p>Tập phim sẽ mở trên trang nguồn gốc để tránh lỗi player. TSVERSE sẽ tự kiểm tra lại nguồn phát trực tiếp định kỳ.</p>
               <a className="primary-button" href={playerEpisode.source_url || playerEpisode.fallback_embed || playerEpisode.link_embed} rel="noreferrer" target="_blank">
                 <Play size={18} fill="currentColor" /> Mở tập phim
               </a>
+              <div className="external-source-links" aria-label="Nguồn cập nhật khác">
+                {externalLinks.map((link) => (
+                  <a href={link.href} key={link.label} rel="noreferrer" target="_blank">
+                    {link.label} <ExternalLink size={14} />
+                  </a>
+                ))}
+              </div>
             </div>
           ) : (
             <HlsVideoPlayer

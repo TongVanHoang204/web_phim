@@ -594,9 +594,13 @@ function parseIframeSrc(html: string) {
 
 function streamfreeProxyUrl(value: string) {
   if (!value) return "";
-  const url = new URL(value);
-  if (url.hostname !== "streamfree.vip") return value;
-  return `/api/streamfree${url.pathname}${url.search}`;
+  try {
+    const url = new URL(value);
+    if (url.hostname !== "streamfree.vip") return value;
+    return `/api/streamfree${url.pathname}${url.search}`;
+  } catch {
+    return value;
+  }
 }
 
 function rewriteStreamfreeUrls(value: string) {
@@ -820,7 +824,12 @@ function isSameEpisode(sourceChapter: string, candidate: PhimApiEpisodeItem) {
 
   const sourceEpisode = episodeNoFromText(sourceChapter);
   const candidateEpisode = episodeNoFromText(`${candidate.name || ""} ${candidate.slug || ""} ${candidate.filename || ""}`);
-  return !!sourceEpisode && !!candidateEpisode && sourceEpisode === candidateEpisode;
+  if (!sourceEpisode || !candidateEpisode) return false;
+  if (sourceEpisode === candidateEpisode) return true;
+
+  const sourceNumber = Number(sourceEpisode);
+  const candidateNumber = Number(candidateEpisode);
+  return Number.isFinite(sourceNumber) && Number.isFinite(candidateNumber) && sourceNumber === candidateNumber;
 }
 
 function preferredPhimApiServers(servers: PhimApiEpisodeServer[]) {
@@ -2194,16 +2203,19 @@ app.get("/api/episodes/:episodeId", async (request, response) => {
       sv: String(episode.sv),
     });
     const directEmbed = parseIframeSrc(playerHtml);
+    const proxiedEmbed = streamfreeProxyUrl(directEmbed);
+    const mustOpenAtSource = !hlsFallback && Boolean(directEmbed);
     response.json({
       status: true,
       source: "HHKUNGFU",
       episode: {
         _id: request.params.episodeId,
         playerType: hlsFallback ? "hls" : "iframe",
-        link_embed: directEmbed || fallbackEmbed,
+        link_embed: fallbackEmbed,
         link_m3u8: hlsFallback ? phimApiHlsUrl(request.params.episodeId) : undefined,
-        fallback_embed: directEmbed || fallbackEmbed,
-        open_external: false,
+        fallback_embed: fallbackEmbed,
+        proxied_embed: proxiedEmbed || directEmbed || undefined,
+        open_external: mustOpenAtSource,
         hls_source: hlsFallback
           ? {
               source: "PhimAPI",
