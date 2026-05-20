@@ -6,6 +6,7 @@ import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import morgan from "morgan";
 import fs from "fs";
+import { ProxyAgent } from "undici";
 
 const app = express();
 const port = Number(process.env.PORT || 8081);
@@ -16,6 +17,8 @@ const hhpandaBaseUrl = process.env.HHPANDA_BASE_URL || "https://hhpanda.st";
 const hh3dBaseUrl = process.env.HH3D_BASE_URL || "https://hh3d.io";
 const hhkungfuBaseUrl = process.env.HHKUNGFU_BASE_URL || "https://hhkungfu.ee";
 const animehayBaseUrl = process.env.ANIMEHAY_BASE_URL || "https://animehay03.site";
+const outboundProxyUrl = process.env.OUTBOUND_PROXY_URL || "";
+const enableHhkungfuPlaywright = process.env.ENABLE_HHKUNGFU_PLAYWRIGHT === "true";
 const corsOrigins = (process.env.CORS_ORIGINS || clientUrl)
   .split(",")
   .map((origin) => origin.trim())
@@ -37,6 +40,28 @@ const watchHistoryByIp = new Map<string, WatchHistoryItem[]>();
 
 const hhkungfuM3u8Cache = new Map<string, { url: string; headers: Record<string, string>; expiresAt: number }>();
 let playwrightBrowser: Browser | null = null;
+let outboundProxyAgent: ProxyAgent | null = null;
+
+function fetchDispatcherForOutboundProxy() {
+  if (!outboundProxyUrl) return undefined;
+  outboundProxyAgent ||= new ProxyAgent(outboundProxyUrl);
+  return outboundProxyAgent;
+}
+
+async function fetchWithTimeout(url: URL, init: RequestInit = {}, timeoutMs = 8000, useOutboundProxy = false) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const requestInit = {
+      ...init,
+      signal: controller.signal,
+      dispatcher: useOutboundProxy ? fetchDispatcherForOutboundProxy() : undefined,
+    } as RequestInit & { dispatcher?: ProxyAgent };
+    return await fetch(url, requestInit);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 async function resolveHhkungfuHlsWithPlaywright(directEmbedUrl: string, episodeKey: string) {
   const cached = hhkungfuM3u8Cache.get(episodeKey);
@@ -705,7 +730,7 @@ async function fetchAnimehayText(pathOrUrl: string) {
   return result.text();
 }
 
-async function fetchHhkungfuPlayerHtml(params: { postId: string; chapter: string; type: string; sv: string }) {
+async function fetchHhkungfuPlayerHtml(params: { postId: string; chapter: string; type: string; sv: string }, options: { useOutboundProxy?: boolean; timeoutMs?: number } = {}) {
   const url = hhkungfuUrl("/player/player.php");
   url.searchParams.set("action", "dox_ajax_player");
   url.searchParams.set("post_id", params.postId);
@@ -713,14 +738,16 @@ async function fetchHhkungfuPlayerHtml(params: { postId: string; chapter: string
   url.searchParams.set("type", params.type);
   url.searchParams.set("sv", params.sv);
 
-  const result = await fetch(url, {
+  const result = await fetchWithTimeout(url, {
     headers: {
       accept: "text/html",
       referer: hhkungfuBaseUrl,
+      origin: hhkungfuBaseUrl,
+      "accept-language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
       "x-requested-with": "XMLHttpRequest",
-      "user-agent": "web-phim-local-dev/0.1",
+      "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     },
-  });
+  }, options.timeoutMs || 8000, Boolean(options.useOutboundProxy));
 
   if (!result.ok) {
     throw new Error(`HHKUNGFU player returned ${result.status}`);
@@ -917,6 +944,44 @@ function parseIframeSrc(html: string) {
   } catch {
     return "";
   }
+}
+
+function parseM3u8Src(html: string) {
+  const src = html.match(/["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i)?.[1];
+  if (!src) return "";
+  try {
+    return String(new URL(decodeHtml(src)));
+  } catch {
+    return "";
+  }
+}
+
+async function resolveHhkungfuDirectSource(params: { postId: string; chapter: string; type: string; sv: string }) {
+  const playerHtml = await fetchHhkungfuPlayerHtml(params, {
+    useOutboundProxy: Boolean(outboundProxyUrl),
+    timeoutMs: 8000,
+  });
+  const m3u8Url = parseM3u8Src(playerHtml);
+  if (m3u8Url) {
+    return {
+      playerType: "hls" as const,
+      source: "HHKungfu-Direct",
+      url: m3u8Url,
+      playerHtml,
+    };
+  }
+
+  const directEmbed = parseIframeSrc(playerHtml);
+  if (directEmbed) {
+    return {
+      playerType: "iframe" as const,
+      source: "HHKungfu-Embed",
+      url: directEmbed,
+      playerHtml,
+    };
+  }
+
+  return null;
 }
 
 function streamfreeProxyUrl(value: string) {
@@ -1724,6 +1789,14 @@ function assertAllowedPhimApiMediaUrl(value: string) {
   const url = new URL(value);
   if (!/(^|\.)kkphimplayer\d*\.com$/i.test(url.hostname) && !/(^|\.)opstream\d*\.com$/i.test(url.hostname)) {
     throw new Error("Blocked PhimAPI media host");
+  }
+  return url;
+}
+
+function assertAllowedHhkungfuDirectMediaUrl(value: string) {
+  const url = new URL(value);
+  if (url.hostname !== "streamfree.vip" && !/(^|\.)kkphimplayer\d*\.com$/i.test(url.hostname) && !/(^|\.)opstream\d*\.com$/i.test(url.hostname)) {
+    throw new Error("Blocked HHKungfu direct media host");
   }
   return url;
 }
@@ -2584,37 +2657,39 @@ app.get("/api/episodes/:episodeId", async (request, response) => {
   const fallbackEmbed = hhkungfuProxyPlayerUrl(String(episode.postId), String(episode.chapter), String(episode.type), String(episode.sv));
 
   try {
-    const hlsFallback = await resolveHhkungfuPhimApiHls({
-      postId: String(episode.postId),
-      chapter: String(episode.chapter),
-    });
-    const playerHtml = await fetchHhkungfuPlayerHtml({
+    const episodeParams = {
       postId: String(episode.postId),
       chapter: String(episode.chapter),
       type: String(episode.type),
       sv: String(episode.sv),
+    };
+    const hlsFallback = await resolveHhkungfuPhimApiHls({
+      postId: episodeParams.postId,
+      chapter: episodeParams.chapter,
     });
-    const directEmbed = parseIframeSrc(playerHtml);
+    const directSource = hlsFallback ? null : await resolveHhkungfuDirectSource(episodeParams);
+    const directEmbed = directSource?.playerType === "iframe" ? directSource.url : parseIframeSrc(directSource?.playerHtml || "");
     const proxiedEmbed = streamfreeProxyUrl(directEmbed);
     const hhkungfuHls = hhkungfuHlsUrl(request.params.episodeId);
+    const hasHls = Boolean(hlsFallback || directSource?.playerType === "hls");
 
     response.json({
       status: true,
       source: "HHKUNGFU",
       episode: {
         _id: request.params.episodeId,
-        playerType: hlsFallback ? "hls" : "iframe",
+        playerType: hasHls ? "hls" : "iframe",
         link_embed: fallbackEmbed,
-        link_m3u8: hlsFallback ? hhkungfuHls : undefined,
+        link_m3u8: hasHls ? hhkungfuHls : undefined,
         fallback_embed: fallbackEmbed,
         proxied_embed: proxiedEmbed || directEmbed || undefined,
         open_external: false,
-        hls_source: hlsFallback
+        hls_source: hasHls
           ? {
-            source: hlsFallback.source,
-            movie: hlsFallback.movie?.slug,
-            server: hlsFallback.server_name,
-            episode: hlsFallback.episode.slug || hlsFallback.episode.name,
+            source: hlsFallback?.source || directSource?.source,
+            movie: hlsFallback?.movie?.slug,
+            server: hlsFallback?.server_name,
+            episode: hlsFallback ? hlsFallback.episode.slug || hlsFallback.episode.name : episode.chapter,
           }
           : undefined,
       },
@@ -2765,7 +2840,46 @@ app.get("/api/hhkungfu/hls/:episodeId", async (request, response) => {
     return true;
   };
 
+  const sendHhkungfuDirectFallback = async () => {
+    const resolved = await resolveHhkungfuDirectSource({
+      postId: String(episode.postId),
+      chapter: String(episode.chapter),
+      type: String(episode.type),
+      sv: String(episode.sv),
+    });
+    if (resolved?.playerType !== "hls") return false;
+
+    const url = assertAllowedHhkungfuDirectMediaUrl(resolved.url);
+    const result = await fetchWithTimeout(
+      url,
+      {
+        headers: {
+          accept: "application/vnd.apple.mpegurl,*/*",
+          referer: hhkungfuBaseUrl,
+          origin: hhkungfuBaseUrl,
+          "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        },
+      },
+      8000,
+      Boolean(outboundProxyUrl),
+    );
+
+    if (!result.ok) throw new Error(`HHKungfu direct HLS returned ${result.status}`);
+    const playlist = await result.text();
+    response.setHeader("cache-control", "no-store");
+    response.setHeader("x-hls-source", "hhkungfu-direct");
+    response.type("application/vnd.apple.mpegurl").send(rewriteM3u8PlaylistWithProxy(playlist, url, hhkungfuHlsProxyUrl));
+    return true;
+  };
+
   try {
+    if (await sendPhimApiFallback()) return;
+    if (await sendHhkungfuDirectFallback()) return;
+    if (!enableHhkungfuPlaywright) {
+      response.status(404).type("text/plain").send("Cannot find matching REST or direct HHKungfu HLS");
+      return;
+    }
+
     const playerHtml = await fetchHhkungfuPlayerHtml({
       postId: String(episode.postId),
       chapter: String(episode.chapter),
@@ -2805,6 +2919,7 @@ app.get("/api/hhkungfu/hls/:episodeId", async (request, response) => {
   } catch (error) {
     try {
       if (await sendPhimApiFallback()) return;
+      if (await sendHhkungfuDirectFallback()) return;
     } catch (fallbackError) {
       response.status(502).type("text/plain").send(errorDetail(fallbackError) || errorDetail(error) || "Cannot load HHKungfu HLS");
       return;
