@@ -1,0 +1,15 @@
+{
+  "name": "tsverse-stream-extractor",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "npx playwright install chromium",
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "playwright": "^1.60.0"
+  }
+}

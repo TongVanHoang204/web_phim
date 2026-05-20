@@ -17,4 +17,20 @@ services:
         value: https://tsverse.vercel.app,http://localhost:5173,http://localhost:5174
       - key: PLAYWRIGHT_BROWSERS_PATH
         value: /opt/render/project/src/backend/ms-playwright
-
+      - key: STREAM_EXTRACTOR_URL
+        fromService:
+          type: web
+          name: tsverse-stream-extractor
+          property: host
+  - type: web
+    name: tsverse-stream-extractor
+    runtime: node
+    plan: free
+    buildCommand: npm install --include=dev && npm --workspace tsverse-stream-extractor run build
+    startCommand: npm --workspace tsverse-stream-extractor run start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PLAYWRIGHT_BROWSERS_PATH
+        value: /opt/render/project/src/stream-extractor/ms-playwright

@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "workspaces": [
     "backend",
-    "frontend"
+    "frontend",
+    "stream-extractor"
   ],
   "scripts": {
     "dev": "concurrently -n backend,frontend -c cyan,magenta \"npm --workspace vsmov-backend run dev\" \"npm --workspace vsmov-frontend run dev\"",

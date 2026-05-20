@@ -19,7 +19,8 @@ const hh3dBaseUrl = process.env.HH3D_BASE_URL || "https://hh3d.io";
 const hhkungfuBaseUrl = process.env.HHKUNGFU_BASE_URL || "https://hhkungfu.ee";
 const animehayBaseUrl = process.env.ANIMEHAY_BASE_URL || "https://animehay03.site";
 const outboundProxyUrl = process.env.OUTBOUND_PROXY_URL || "";
-const streamExtractorUrl = (process.env.STREAM_EXTRACTOR_URL || "").replace(/\/+$/, "");
+const rawStreamExtractorUrl = (process.env.STREAM_EXTRACTOR_URL || "").trim();
+const streamExtractorUrl = rawStreamExtractorUrl ? (/^https?:\/\//i.test(rawStreamExtractorUrl) ? rawStreamExtractorUrl : `https://${rawStreamExtractorUrl}`).replace(/\/+$/, "") : "";
 const streamExtractorToken = process.env.STREAM_EXTRACTOR_TOKEN || "";
 const enableHhkungfuPlaywright = process.env.ENABLE_HHKUNGFU_PLAYWRIGHT === "true";
 const corsOrigins = (process.env.CORS_ORIGINS || clientUrl)
