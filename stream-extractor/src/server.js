@@ -135,9 +135,12 @@ async function extractStream({ iframeUrl, referer }) {
   }
 }
 
-app.get("/health", (_request, response) => {
+function health(_request, response) {
   response.json({ ok: true, activeContexts });
-});
+}
+
+app.get("/health", health);
+app.get("/api/health", health);
 
 app.post("/api/extract", async (request, response) => {
   if (!assertAuthorized(request, response)) return;

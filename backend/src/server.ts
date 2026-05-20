@@ -22,6 +22,7 @@ const outboundProxyUrl = process.env.OUTBOUND_PROXY_URL || "";
 const rawStreamExtractorUrl = (process.env.STREAM_EXTRACTOR_URL || "").trim();
 const streamExtractorUrl = rawStreamExtractorUrl ? (/^https?:\/\//i.test(rawStreamExtractorUrl) ? rawStreamExtractorUrl : `https://${rawStreamExtractorUrl}`).replace(/\/+$/, "") : "";
 const streamExtractorToken = process.env.STREAM_EXTRACTOR_TOKEN || "";
+const streamExtractorTimeoutMs = Number(process.env.STREAM_EXTRACTOR_TIMEOUT_MS || 9000);
 const enableHhkungfuPlaywright = process.env.ENABLE_HHKUNGFU_PLAYWRIGHT === "true";
 const corsOrigins = (process.env.CORS_ORIGINS || clientUrl)
   .split(",")
@@ -1099,7 +1100,7 @@ async function extractM3u8WithStreamExtractor(iframeUrl: string, referer: string
         headers,
         body: JSON.stringify({ iframeUrl, referer }),
       },
-      25000,
+      streamExtractorTimeoutMs,
       false,
     );
     if (!result.ok) return "";
