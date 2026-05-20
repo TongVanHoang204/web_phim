@@ -2875,7 +2875,7 @@ app.get("/api/hhkungfu/hls/:episodeId", async (request, response) => {
   try {
     if (await sendPhimApiFallback()) return;
     if (await sendHhkungfuDirectFallback()) return;
-    if (!enableHhkungfuPlaywright) {
+    if (isProduction || !enableHhkungfuPlaywright) {
       response.status(404).type("text/plain").send("Cannot find matching REST or direct HHKungfu HLS");
       return;
     }
