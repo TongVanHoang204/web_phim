@@ -6,12 +6,15 @@ const port = Number(process.env.PORT || 3000);
 const extractorToken = process.env.STREAM_EXTRACTOR_TOKEN || "";
 const launchTimeoutMs = Number(process.env.EXTRACTOR_LAUNCH_TIMEOUT_MS || 30000);
 const extractTimeoutMs = Number(process.env.EXTRACTOR_TIMEOUT_MS || 18000);
-const maxContexts = Number(process.env.EXTRACTOR_MAX_CONTEXTS || 2);
+const requestTimeoutMs = Number(process.env.EXTRACTOR_REQUEST_TIMEOUT_MS || 25000);
+const maxContexts = Number(process.env.EXTRACTOR_MAX_CONTEXTS || 1);
 
 app.use(express.json({ limit: "32kb" }));
 
 let browserPromise = null;
 let activeContexts = 0;
+let totalRequests = 0;
+let lastResult = null;
 
 function assertAuthorized(request, response) {
   if (!extractorToken) return true;
@@ -52,6 +55,16 @@ async function getBrowser() {
 
 function isLikelyPrimaryPlaylist(url) {
   return /\.m3u8(?:[?#]|$)/i.test(url) && !/ads?|vast|tracking|analytics/i.test(url);
+}
+
+function timeoutError(timeoutMs) {
+  return new Promise((_, reject) => {
+    setTimeout(() => {
+      const error = new Error(`Extractor request timed out after ${timeoutMs}ms`);
+      error.statusCode = 504;
+      reject(error);
+    }, timeoutMs);
+  });
 }
 
 async function extractStream({ iframeUrl, referer }) {
@@ -100,8 +113,12 @@ async function extractStream({ iframeUrl, referer }) {
       if (!finalM3u8 || /(?:master|index|playlist)/i.test(url)) finalM3u8 = url;
     };
 
-    page.on("request", (request) => capture(request.url()));
-    page.on("response", (response) => capture(response.url()));
+    page.on("request", (request) => {
+      capture(request.url());
+    });
+    page.on("response", (response) => {
+      capture(response.url());
+    });
 
     await page.goto(cleanIframeUrl, { waitUntil: "domcontentloaded", timeout: Math.min(extractTimeoutMs, 15000) });
 
@@ -144,20 +161,37 @@ app.get("/api/health", health);
 
 app.post("/api/extract", async (request, response) => {
   if (!assertAuthorized(request, response)) return;
+  totalRequests += 1;
+  const startedAt = Date.now();
 
   try {
-    const url = await extractStream({
-      iframeUrl: request.body?.iframeUrl,
-      referer: request.body?.referer,
-    });
+    const url = await Promise.race([
+      extractStream({
+        iframeUrl: request.body?.iframeUrl,
+        referer: request.body?.referer,
+      }),
+      timeoutError(requestTimeoutMs),
+    ]);
+    lastResult = { ok: true, status: 200, elapsedMs: Date.now() - startedAt, at: new Date().toISOString() };
     response.json({ success: true, url });
   } catch (error) {
     const status = Number(error?.statusCode || 500);
+    lastResult = {
+      ok: false,
+      status,
+      error: error instanceof Error ? error.message : "Unknown extractor error",
+      elapsedMs: Date.now() - startedAt,
+      at: new Date().toISOString(),
+    };
     response.status(status).json({
       success: false,
       error: error instanceof Error ? error.message : "Unknown extractor error",
     });
   }
+});
+
+app.get("/debug/status", (_request, response) => {
+  response.json({ ok: true, activeContexts, maxContexts, totalRequests, lastResult });
 });
 
 process.on("SIGTERM", async () => {
