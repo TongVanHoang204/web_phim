@@ -756,6 +756,31 @@ async function fetchHhkungfuPlayerHtml(params: { postId: string; chapter: string
   return result.text();
 }
 
+async function fetchHhkungfuWatchHtml(url: URL, options: { useOutboundProxy?: boolean; timeoutMs?: number } = {}) {
+  const result = await fetchWithTimeout(
+    url,
+    {
+      headers: {
+        accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        referer: hhkungfuBaseUrl,
+        origin: hhkungfuBaseUrl,
+        "accept-language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      },
+    },
+    options.timeoutMs || 8000,
+    Boolean(options.useOutboundProxy),
+  );
+
+  if (result.status === 403 || result.status === 404) return null;
+  if (!result.ok) throw new Error(`HHKUNGFU watch page returned ${result.status}`);
+
+  return {
+    url: String(url),
+    html: await result.text(),
+  };
+}
+
 async function fetchHh3dText(pathOrUrl: string) {
   const url = pathOrUrl.startsWith("http") ? new URL(pathOrUrl) : hh3dUrl(pathOrUrl);
   const result = await fetch(url, {
@@ -936,11 +961,11 @@ function hhkungfuProxyPlayerUrl(postId: string, chapter: string, type: string, s
   return `${url.pathname}${url.search}`;
 }
 
-function parseIframeSrc(html: string) {
+function parseIframeSrc(html: string, baseUrl = hhkungfuBaseUrl) {
   const src = html.match(/<iframe\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/i)?.[1];
   if (!src) return "";
   try {
-    return String(new URL(decodeHtml(src), hhkungfuBaseUrl));
+    return String(new URL(decodeHtml(src), baseUrl));
   } catch {
     return "";
   }
@@ -950,35 +975,168 @@ function parseM3u8Src(html: string) {
   const src = html.match(/["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i)?.[1];
   if (!src) return "";
   try {
-    return String(new URL(decodeHtml(src)));
+    return String(new URL(decodeHtml(src).replace(/\\/g, "")));
+  } catch {
+    return "";
+  }
+}
+
+function episodeNumberFromChapter(chapter: string) {
+  return episodeNoFromText(chapter) || chapter.replace(/\D+/g, "");
+}
+
+function hhkungfuWatchPageCandidates(slug: string, chapter: string, sv: string) {
+  const episodeNumber = episodeNumberFromChapter(chapter);
+  const cleanChapter = chapter.replace(/[^a-z0-9-]+/gi, "-").toLowerCase();
+  const candidates = [
+    `/watch-${slug}/${cleanChapter}-sv${sv}.html`,
+    episodeNumber ? `/watch-${slug}/tap-${episodeNumber}-sv${sv}.html` : "",
+    `/watch-${slug}/${cleanChapter}.html`,
+    episodeNumber ? `/watch-${slug}/tap-${episodeNumber}.html` : "",
+    `/xem-phim/${slug}-${cleanChapter}`,
+    episodeNumber ? `/xem-phim/${slug}-tap-${episodeNumber}` : "",
+    `/${slug}-${cleanChapter}.html`,
+    episodeNumber ? `/${slug}-tap-${episodeNumber}.html` : "",
+  ].filter(Boolean);
+
+  return Array.from(new Set(candidates)).map((path) => hhkungfuUrl(path));
+}
+
+async function resolveHhkungfuWatchPageSource(params: { slug: string; chapter: string; sv: string }) {
+  for (const url of hhkungfuWatchPageCandidates(params.slug, params.chapter, params.sv)) {
+    try {
+      const result = await fetchHhkungfuWatchHtml(url, {
+        useOutboundProxy: Boolean(outboundProxyUrl),
+        timeoutMs: 8000,
+      });
+      if (!result) continue;
+
+      const m3u8Url = parseM3u8Src(result.html);
+      if (m3u8Url) {
+        return {
+          playerType: "hls" as const,
+          source: "HHKungfu-Watch",
+          url: m3u8Url,
+          playerHtml: result.html,
+          referer: result.url,
+        };
+      }
+
+      const directEmbed = parseIframeSrc(result.html, result.url);
+      if (directEmbed) {
+        return {
+          playerType: "iframe" as const,
+          source: "HHKungfu-Watch-Embed",
+          url: directEmbed,
+          playerHtml: result.html,
+          referer: result.url,
+        };
+      }
+    } catch (error) {
+      if (!isProduction) console.warn(`HHKUNGFU watch candidate failed ${url}: ${errorDetail(error)}`);
+    }
+  }
+
+  return null;
+}
+
+async function fetchHhkungfuPostById(postId: string) {
+  const result = await fetchHhkungfuJson<HhpandaPost>(`/wp-json/wp/v2/posts/${postId}`, {
+    _embed: 1,
+  });
+  return result.data;
+}
+
+async function extractM3u8FromStreamfree(iframeUrl: string, originalReferer: string) {
+  if (!iframeUrl) return "";
+  try {
+    const url = new URL(iframeUrl, originalReferer || hhkungfuBaseUrl);
+    const result = await fetchWithTimeout(
+      url,
+      {
+        headers: {
+          accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          referer: originalReferer || hhkungfuBaseUrl,
+          "accept-language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
+          "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        },
+      },
+      8000,
+      Boolean(outboundProxyUrl),
+    );
+    if (!result.ok) return "";
+    return parseM3u8Src(await result.text());
   } catch {
     return "";
   }
 }
 
 async function resolveHhkungfuDirectSource(params: { postId: string; chapter: string; type: string; sv: string }) {
-  const playerHtml = await fetchHhkungfuPlayerHtml(params, {
-    useOutboundProxy: Boolean(outboundProxyUrl),
-    timeoutMs: 8000,
-  });
-  const m3u8Url = parseM3u8Src(playerHtml);
-  if (m3u8Url) {
-    return {
-      playerType: "hls" as const,
-      source: "HHKungfu-Direct",
-      url: m3u8Url,
-      playerHtml,
-    };
+  let post: HhpandaPost | null = null;
+  try {
+    post = await fetchHhkungfuPostById(params.postId);
+  } catch {}
+
+  if (post?.slug) {
+    const watchSource = await resolveHhkungfuWatchPageSource({
+      slug: post.slug,
+      chapter: params.chapter,
+      sv: params.sv,
+    });
+    if (watchSource?.playerType === "hls") return watchSource;
+    if (watchSource?.playerType === "iframe") {
+      const m3u8Url = await extractM3u8FromStreamfree(watchSource.url, watchSource.referer || hhkungfuBaseUrl);
+      if (m3u8Url) {
+        return {
+          playerType: "hls" as const,
+          source: "Streamfree-Extracted",
+          url: m3u8Url,
+          playerHtml: watchSource.playerHtml,
+          referer: watchSource.referer,
+        };
+      }
+      return watchSource;
+    }
   }
 
-  const directEmbed = parseIframeSrc(playerHtml);
-  if (directEmbed) {
-    return {
-      playerType: "iframe" as const,
-      source: "HHKungfu-Embed",
-      url: directEmbed,
-      playerHtml,
-    };
+  try {
+    const playerHtml = await fetchHhkungfuPlayerHtml(params, {
+      useOutboundProxy: Boolean(outboundProxyUrl),
+      timeoutMs: 8000,
+    });
+    const m3u8Url = parseM3u8Src(playerHtml);
+    if (m3u8Url) {
+      return {
+        playerType: "hls" as const,
+        source: "HHKungfu-Direct",
+        url: m3u8Url,
+        playerHtml,
+        referer: hhkungfuBaseUrl,
+      };
+    }
+
+    const directEmbed = parseIframeSrc(playerHtml);
+    if (directEmbed) {
+      const m3u8Url = await extractM3u8FromStreamfree(directEmbed, hhkungfuBaseUrl);
+      if (m3u8Url) {
+        return {
+          playerType: "hls" as const,
+          source: "Streamfree-Extracted",
+          url: m3u8Url,
+          playerHtml,
+          referer: hhkungfuBaseUrl,
+        };
+      }
+      return {
+        playerType: "iframe" as const,
+        source: "HHKungfu-Embed",
+        url: directEmbed,
+        playerHtml,
+        referer: hhkungfuBaseUrl,
+      };
+    }
+  } catch (error) {
+    if (!isProduction) console.warn(`HHKUNGFU player.php direct source failed: ${errorDetail(error)}`);
   }
 
   return null;
