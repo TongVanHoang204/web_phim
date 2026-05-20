@@ -1176,17 +1176,37 @@ a {
   line-height: 1.6;
 }
 
-.iframe-timeout a {
+.iframe-timeout-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+.iframe-timeout a,
+.iframe-timeout button {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   min-height: 42px;
   padding: 0 16px;
+  border: 0;
   border-radius: 999px;
   background: var(--primary);
   color: white;
   font-weight: 900;
   text-decoration: none;
+  cursor: pointer;
+}
+
+.iframe-timeout button:nth-child(3) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.iframe-timeout button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .player-frame:fullscreen {

@@ -161,7 +161,7 @@ async function resolveHhkungfuHlsWithPlaywright(directEmbedUrl: string, episodeK
         };
         var noop = function() {};
         var mockConsole: Record<string, Function> = {};
-        var props = ["log", "table", "clear", "dir", "group", "groupCollapsed", "groupEnd", "trace", "warn", "info", "error"];
+        var props = ["log", "table", "clear", "dir", "group", "groupCollapsed", "groupEnd", "trace", "warn", "info", "debug", "error"];
         props.forEach(function(p) {
           mockConsole[p] = makeNative(noop, p);
         });

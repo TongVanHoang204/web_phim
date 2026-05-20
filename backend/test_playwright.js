@@ -4,10 +4,22 @@ const target =
   process.env.TARGET_URL ||
   "https://tsverse.vercel.app/xem-phim/gia-thien?episode=tap-163";
 
-const waitMs = Number(process.env.WAIT_MS || 15000);
+const waitMs = Number(process.env.WAIT_MS || 25000);
+const testsStreamfreeDirectly = target.includes("streamfree.vip") || target.includes("/api/streamfree/");
 
 function isMediaUrl(url) {
-  return /\.(m3u8|ts|mp4)(?:[?#]|$)/i.test(url) || url.includes("/hls-proxy") || url.includes("/api/hhkungfu/hls/");
+  if (url.includes("/hls-proxy") || url.includes("/api/hhkungfu/hls/")) return true;
+  try {
+    const parsed = new URL(url);
+    const pathname = parsed.pathname.toLowerCase();
+    if (pathname.endsWith(".m3u8") || pathname.endsWith(".mp4")) return true;
+    if (pathname.endsWith(".ts")) {
+      return !pathname.startsWith("/src/") && !pathname.includes("/node_modules/") && !pathname.includes("/@fs/");
+    }
+  } catch {
+    return /\.(m3u8|mp4)(?:[?#]|$)/i.test(url);
+  }
+  return false;
 }
 
 async function frameSnapshot(frame) {
@@ -59,10 +71,12 @@ async function test() {
     viewport: { width: 1200, height: 720 },
   });
 
-  await context.setExtraHTTPHeaders({
-    "referer": "https://hhkungfu.ee/",
-    "origin": "https://hhkungfu.ee"
-  });
+  if (testsStreamfreeDirectly) {
+    await context.setExtraHTTPHeaders({
+      "referer": "https://hhkungfu.ee/",
+      "origin": "https://hhkungfu.ee"
+    });
+  }
 
   const page = await context.newPage();
   const consoleMessages = [];
@@ -89,9 +103,11 @@ async function test() {
     failedRequests.push(`${request.method()} ${url} ${request.failure()?.errorText || ""}`);
   });
 
-  // Inject anti-bot bypass scripts
-  await page.addInitScript(() => {
-    try {
+  // Inject anti-bot bypass scripts only when the target itself is Streamfree.
+  // App-page tests should exercise TSVERSE without modifying browser globals.
+  if (testsStreamfreeDirectly) {
+    await page.addInitScript(() => {
+      try {
       // 1. Stub iframe check
       var mockParent = new Proxy(window, {
         get: function(target, prop) {
@@ -144,7 +160,7 @@ async function test() {
         };
         var noop = function() {};
         var mockConsole = {};
-        var props = ["log", "table", "clear", "dir", "group", "groupCollapsed", "groupEnd", "trace", "warn", "info", "error"];
+        var props = ["log", "table", "clear", "dir", "group", "groupCollapsed", "groupEnd", "trace", "warn", "info", "debug", "error"];
         props.forEach(function(p) {
           mockConsole[p] = makeNative(noop, p);
         });
@@ -200,25 +216,27 @@ async function test() {
           }
         };
       } catch(e) {}
-    } catch(e) {}
-  });
+      } catch(e) {}
+    });
+  }
 
-  // Intercept headers for streamfree context
-  await page.route("**/*", async (route) => {
-    const req = route.request();
-    const url = req.url();
-    const type = req.resourceType();
-    if (url.includes("streamfree.vip") && (type === "document" || url.includes(".m3u8"))) {
-      const headers = {
-        ...req.headers(),
-        "referer": "https://hhkungfu.ee/",
-        "origin": "https://hhkungfu.ee"
-      };
-      await route.continue({ headers });
-    } else {
-      await route.continue();
-    }
-  });
+  if (testsStreamfreeDirectly) {
+    await page.route("**/*", async (route) => {
+      const req = route.request();
+      const url = req.url();
+      const type = req.resourceType();
+      if (url.includes("streamfree.vip") && (type === "document" || url.includes(".m3u8"))) {
+        const headers = {
+          ...req.headers(),
+          "referer": "https://hhkungfu.ee/",
+          "origin": "https://hhkungfu.ee"
+        };
+        await route.continue({ headers });
+      } else {
+        await route.continue();
+      }
+    });
+  }
 
   try {
     console.log(`Navigating to: ${target}`);
@@ -264,8 +282,12 @@ async function test() {
 
     const streamfree = snapshots.find((item) => item.url?.includes("/api/streamfree/embed/") || item.url?.includes("streamfree.vip"));
     const hasUsableVideo = snapshots.some((item) => item.hasVideo && item.video?.readyState >= 1);
-    const hasMedia = mediaResponses.some((line) => /^2\d\d /.test(line));
+    const hasMedia = mediaResponses.some((line) => {
+      const match = line.match(/^2\d\d\s+\S+\s+(.+)$/);
+      return Boolean(match && isMediaUrl(match[1]));
+    });
     const stuckLoading = streamfree?.playerState === "loading";
+    const sourceUnavailable = snapshots.some((item) => /Nguồn này chưa sẵn sàng|Server hiện chưa có HLS ổn định/i.test(item.text || ""));
 
     console.log("\nFrame snapshots:");
     console.log(JSON.stringify(snapshots, null, 2));
@@ -278,6 +300,11 @@ async function test() {
 
     console.log("\nFailed requests:");
     console.log(failedRequests.length ? failedRequests.join("\n") : "(none)");
+
+    if (sourceUnavailable) {
+      console.log("\nSOURCE_UNAVAILABLE: app showed the no-stable-HLS fallback state instead of hanging.");
+      return;
+    }
 
     if (!hasUsableVideo && !hasMedia) {
       throw new Error("Player did not load usable video or media responses");

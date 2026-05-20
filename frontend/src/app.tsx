@@ -779,6 +779,7 @@ function HlsVideoPlayer({
   onPreviousEpisode: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const hideControlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [hlsError, setHlsError] = useState("");
   const [controlsVisible, setControlsVisible] = useState(true);
@@ -787,6 +788,9 @@ function HlsVideoPlayer({
   const [paused, setPaused] = useState(true);
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(1);
+  const [iframeTimedOut, setIframeTimedOut] = useState(false);
+  const [iframeDismissed, setIframeDismissed] = useState(false);
+  const [iframeReloadKey, setIframeReloadKey] = useState(0);
 
 
   function clearHideControlsTimer() {
@@ -1014,19 +1018,62 @@ function HlsVideoPlayer({
     return undefined;
   }, [episode.link_m3u8]);
 
+  useEffect(() => {
+    setIframeTimedOut(false);
+    setIframeDismissed(false);
+
+    if (episode.link_m3u8 || !episode.link_embed.includes("/api/hhkungfu/player")) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      setIframeTimedOut(true);
+    }, 14000);
+
+    return () => window.clearTimeout(timer);
+  }, [episode.link_embed, episode.link_m3u8, iframeReloadKey]);
+
 
 
   if (!episode.link_m3u8) {
-    const fallbackUrl = episode.source_url || episode.fallback_embed || episode.link_embed;
+    const fallbackUrl = episode.link_embed || episode.fallback_embed || episode.source_url;
+    const showIframeFallback = iframeTimedOut && !iframeDismissed && episode.link_embed.includes("/api/hhkungfu/player");
 
     return (
       <div className="iframe-player">
         <iframe
-          src={episode.link_embed}
+          key={iframeReloadKey}
+          ref={iframeRef}
+          src={fallbackUrl}
           aria-label={title}
           allow="autoplay; encrypted-media; picture-in-picture"
           allowFullScreen
         />
+        {showIframeFallback ? (
+          <div className="iframe-timeout" role="status" aria-live="polite">
+            <Info size={28} />
+            <h2>Nguồn này chưa sẵn sàng</h2>
+            <p>Server hiện chưa có HLS ổn định cho tập này. Bạn có thể thử tải lại player hoặc chuyển về tập trước đang có nguồn phát.</p>
+            <div className="iframe-timeout-actions">
+              <button
+                type="button"
+                onClick={() => {
+                  setIframeDismissed(true);
+                  setIframeTimedOut(false);
+                  setIframeReloadKey((key) => key + 1);
+                }}
+              >
+                Thử lại
+              </button>
+              <button disabled={!hasPreviousEpisode} type="button" onClick={onPreviousEpisode}>
+                <SkipBack size={16} /> Tập trước
+              </button>
+              <button type="button" onClick={() => setIframeDismissed(true)}>
+                Tiếp tục chờ
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
     );
   }
