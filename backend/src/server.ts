@@ -44,6 +44,10 @@ async function resolveHhkungfuHlsWithPlaywright(directEmbedUrl: string, episodeK
   }
 
   if (!playwrightBrowser) {
+    if (process.env.RENDER && !process.env.PLAYWRIGHT_BROWSERS_PATH) {
+      process.env.PLAYWRIGHT_BROWSERS_PATH = "/opt/render/project/src/backend/ms-playwright";
+    }
+    console.log(`[PLAYWRIGHT] Launching Chromium. Path: ${process.env.PLAYWRIGHT_BROWSERS_PATH || "default"}`);
     playwrightBrowser = await chromium.launch({
       headless: true,
       args: [
