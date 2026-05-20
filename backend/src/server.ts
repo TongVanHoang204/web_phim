@@ -6,6 +6,7 @@ import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import morgan from "morgan";
 import fs from "fs";
+import vm from "node:vm";
 import { ProxyAgent } from "undici";
 
 const app = express();
@@ -972,13 +973,43 @@ function parseIframeSrc(html: string, baseUrl = hhkungfuBaseUrl) {
 }
 
 function parseM3u8Src(html: string) {
-  const src = html.match(/["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i)?.[1];
+  const patterns = [
+    /sources\s*:\s*\[\s*\{[^}]*(?:file|src)\s*:\s*["']([^"'\s]+\.m3u8[^"'\s]*)["']/i,
+    /(?:file|src|url|link|source)\s*[:=]\s*["']([^"'\s]+\.m3u8[^"'\s]*)["']/i,
+    /["'](https?:\/\/[^"'\s]+\.m3u8[^"'\s]*)["']/i,
+  ];
+  const src = patterns.map((pattern) => html.match(pattern)?.[1]).find(Boolean);
   if (!src) return "";
   try {
     return String(new URL(decodeHtml(src).replace(/\\/g, "")));
   } catch {
     return "";
   }
+}
+
+function unpackStreamfreeJs(html: string) {
+  const packedBlocks = [
+    ...html.matchAll(
+      /eval\s*\(\s*(function\s*\(\s*p\s*,\s*a\s*,\s*c\s*,\s*k\s*,\s*e\s*,\s*[a-zA-Z0-9_$]+\s*\)[\s\S]*?\)\s*\([\s\S]*?\.split\s*\(\s*["']\|["']\s*\)[\s\S]*?\))\s*\)/g,
+    ),
+  ];
+
+  for (const match of packedBlocks) {
+    const packedPayload = match[1];
+    if (!packedPayload || packedPayload.length > 1_000_000) continue;
+
+    try {
+      const unpacked = vm.runInNewContext(`(${packedPayload})`, Object.create(null), {
+        timeout: 50,
+        displayErrors: false,
+      });
+      if (typeof unpacked !== "string") continue;
+      const m3u8Url = parseM3u8Src(unpacked);
+      if (m3u8Url) return m3u8Url;
+    } catch {}
+  }
+
+  return "";
 }
 
 function episodeNumberFromChapter(chapter: string) {
@@ -1051,12 +1082,14 @@ async function extractM3u8FromStreamfree(iframeUrl: string, originalReferer: str
   if (!iframeUrl) return "";
   try {
     const url = new URL(iframeUrl, originalReferer || hhkungfuBaseUrl);
+    const referer = originalReferer || hhkungfuBaseUrl;
     const result = await fetchWithTimeout(
       url,
       {
         headers: {
-          accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          referer: originalReferer || hhkungfuBaseUrl,
+          accept: "*/*",
+          referer,
+          origin: new URL(referer).origin,
           "accept-language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
           "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         },
@@ -1065,7 +1098,8 @@ async function extractM3u8FromStreamfree(iframeUrl: string, originalReferer: str
       Boolean(outboundProxyUrl),
     );
     if (!result.ok) return "";
-    return parseM3u8Src(await result.text());
+    const html = await result.text();
+    return parseM3u8Src(html) || unpackStreamfreeJs(html);
   } catch {
     return "";
   }
