@@ -11,6 +11,7 @@ const app = express();
 const port = Number(process.env.PORT || 8081);
 const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
 const upstreamBaseUrl = process.env.PHIMAPI_BASE_URL || "https://phimapi.com";
+const oPhimBaseUrl = process.env.OPHIM_BASE_URL || "https://ophim1.com";
 const hhpandaBaseUrl = process.env.HHPANDA_BASE_URL || "https://hhpanda.st";
 const hh3dBaseUrl = process.env.HH3D_BASE_URL || "https://hh3d.io";
 const hhkungfuBaseUrl = process.env.HHKUNGFU_BASE_URL || "https://hhkungfu.ee";
@@ -584,8 +585,8 @@ function animehayUrl(path: string) {
   return new URL(path, animehayBaseUrl);
 }
 
-function phimApiUrl(path: string) {
-  return new URL(path, upstreamBaseUrl);
+function phimApiUrl(path: string, baseUrl = upstreamBaseUrl) {
+  return new URL(path, baseUrl);
 }
 
 async function fetchHhpandaJson<T>(path: string, params: Record<string, string | number | undefined> = {}) {
@@ -636,8 +637,8 @@ async function fetchHhkungfuJson<T>(path: string, params: Record<string, string 
   };
 }
 
-async function fetchPhimApiJson<T>(path: string, params: Record<string, string | number | undefined> = {}) {
-  const url = phimApiUrl(path);
+async function fetchPhimApiJson<T>(path: string, params: Record<string, string | number | undefined> = {}, baseUrl = upstreamBaseUrl) {
+  const url = phimApiUrl(path, baseUrl);
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined && value !== "") url.searchParams.set(key, String(value));
   }
@@ -1178,6 +1179,16 @@ async function fetchPhimApiDetailBySlug(slug: string) {
   }
 }
 
+async function fetchMovieApiDetailBySlug(slug: string, baseUrl: string) {
+  if (!slug || !/^[a-z0-9-]+$/i.test(slug)) return null;
+  try {
+    const detail = await fetchPhimApiJson<PhimApiDetailResponse>(`/phim/${slug}`, {}, baseUrl);
+    return detail.movie?.slug ? detail : null;
+  } catch {
+    return null;
+  }
+}
+
 async function searchPhimApiCandidates(keyword: string) {
   if (!keyword.trim()) return [];
   try {
@@ -1185,6 +1196,23 @@ async function searchPhimApiCandidates(keyword: string) {
       keyword,
       limit: 8,
     });
+    return search.data?.items || [];
+  } catch {
+    return [];
+  }
+}
+
+async function searchMovieApiCandidates(keyword: string, baseUrl: string) {
+  if (!keyword.trim()) return [];
+  try {
+    const search = await fetchPhimApiJson<PhimApiSearchResponse>(
+      "/v1/api/tim-kiem",
+      {
+        keyword,
+        limit: 8,
+      },
+      baseUrl,
+    );
     return search.data?.items || [];
   } catch {
     return [];
@@ -1212,21 +1240,51 @@ async function resolvePhimApiDetailForHhkungfuPost(post: HhpandaPost) {
   return null;
 }
 
+async function resolveMovieApiDetailForHhkungfuPost(post: HhpandaPost, baseUrl: string) {
+  const sourceMovie = normalizeHhkungfuPost(post);
+  const direct = await fetchMovieApiDetailBySlug(sourceMovie.slug, baseUrl);
+  if (direct?.movie && isConfidentMovieMatch(sourceMovie, direct.movie)) return direct;
+
+  const keywords = [sourceMovie.name, sourceMovie.origin_name].filter(Boolean);
+  const seenSlugs = new Set<string>();
+  for (const keyword of keywords) {
+    const candidates = await searchMovieApiCandidates(keyword, baseUrl);
+    for (const candidate of candidates) {
+      if (!candidate.slug || seenSlugs.has(candidate.slug)) continue;
+      seenSlugs.add(candidate.slug);
+      if (!isConfidentMovieMatch(sourceMovie, candidate)) continue;
+      const detail = await fetchMovieApiDetailBySlug(candidate.slug, baseUrl);
+      if (detail?.movie && isConfidentMovieMatch(sourceMovie, detail.movie)) return detail;
+    }
+  }
+
+  return null;
+}
+
 async function resolveHhkungfuPhimApiHls(episode: { postId: string; chapter: string }) {
   const postResult = await fetchHhkungfuJson<HhpandaPost>(`/wp-json/wp/v2/posts/${episode.postId}`, {
     _embed: 1,
   });
-  const detail = await resolvePhimApiDetailForHhkungfuPost(postResult.data);
-  if (!detail?.episodes?.length) return null;
+  const sources = [
+    { name: "PhimAPI", baseUrl: upstreamBaseUrl },
+    { name: "OPhim", baseUrl: oPhimBaseUrl },
+  ].filter((source, index, all) => all.findIndex((item) => item.baseUrl === source.baseUrl) === index);
 
-  for (const server of preferredPhimApiServers(detail.episodes)) {
-    for (const item of server.server_data || []) {
-      if (!item.link_m3u8 || !isSameEpisode(episode.chapter, item)) continue;
-      return {
-        movie: detail.movie,
-        server_name: server.server_name || "PhimAPI",
-        episode: item,
-      };
+  for (const source of sources) {
+    const detail =
+      source.baseUrl === upstreamBaseUrl ? await resolvePhimApiDetailForHhkungfuPost(postResult.data) : await resolveMovieApiDetailForHhkungfuPost(postResult.data, source.baseUrl);
+    if (!detail?.episodes?.length) continue;
+
+    for (const server of preferredPhimApiServers(detail.episodes)) {
+      for (const item of server.server_data || []) {
+        if (!item.link_m3u8 || !isSameEpisode(episode.chapter, item)) continue;
+        return {
+          source: source.name,
+          movie: detail.movie,
+          server_name: server.server_name || source.name,
+          episode: item,
+        };
+      }
     }
   }
 
@@ -1664,7 +1722,7 @@ function assertAllowedAnimehayMediaUrl(value: string) {
 
 function assertAllowedPhimApiMediaUrl(value: string) {
   const url = new URL(value);
-  if (!/(^|\.)kkphimplayer\d*\.com$/i.test(url.hostname)) {
+  if (!/(^|\.)kkphimplayer\d*\.com$/i.test(url.hostname) && !/(^|\.)opstream\d*\.com$/i.test(url.hostname)) {
     throw new Error("Blocked PhimAPI media host");
   }
   return url;
@@ -2553,7 +2611,7 @@ app.get("/api/episodes/:episodeId", async (request, response) => {
         open_external: false,
         hls_source: hlsFallback
           ? {
-            source: "PhimAPI",
+            source: hlsFallback.source,
             movie: hlsFallback.movie?.slug,
             server: hlsFallback.server_name,
             episode: hlsFallback.episode.slug || hlsFallback.episode.name,
