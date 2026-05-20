@@ -19,6 +19,8 @@ const hh3dBaseUrl = process.env.HH3D_BASE_URL || "https://hh3d.io";
 const hhkungfuBaseUrl = process.env.HHKUNGFU_BASE_URL || "https://hhkungfu.ee";
 const animehayBaseUrl = process.env.ANIMEHAY_BASE_URL || "https://animehay03.site";
 const outboundProxyUrl = process.env.OUTBOUND_PROXY_URL || "";
+const streamExtractorUrl = (process.env.STREAM_EXTRACTOR_URL || "").replace(/\/+$/, "");
+const streamExtractorToken = process.env.STREAM_EXTRACTOR_TOKEN || "";
 const enableHhkungfuPlaywright = process.env.ENABLE_HHKUNGFU_PLAYWRIGHT === "true";
 const corsOrigins = (process.env.CORS_ORIGINS || clientUrl)
   .split(",")
@@ -1078,6 +1080,37 @@ async function fetchHhkungfuPostById(postId: string) {
   return result.data;
 }
 
+async function extractM3u8WithStreamExtractor(iframeUrl: string, referer: string) {
+  if (!streamExtractorUrl || !iframeUrl) return "";
+
+  try {
+    const url = new URL("/api/extract", streamExtractorUrl);
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+      accept: "application/json",
+    };
+    if (streamExtractorToken) headers.authorization = `Bearer ${streamExtractorToken}`;
+
+    const result = await fetchWithTimeout(
+      url,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ iframeUrl, referer }),
+      },
+      25000,
+      false,
+    );
+    if (!result.ok) return "";
+
+    const payload = (await result.json()) as { success?: boolean; url?: string };
+    if (!payload.success || !payload.url) return "";
+    return parseM3u8Src(`"${payload.url}"`);
+  } catch {
+    return "";
+  }
+}
+
 async function extractM3u8FromStreamfree(iframeUrl: string, originalReferer: string) {
   if (!iframeUrl) return "";
   try {
@@ -1099,9 +1132,9 @@ async function extractM3u8FromStreamfree(iframeUrl: string, originalReferer: str
     );
     if (!result.ok) return "";
     const html = await result.text();
-    return parseM3u8Src(html) || unpackStreamfreeJs(html);
+    return parseM3u8Src(html) || unpackStreamfreeJs(html) || await extractM3u8WithStreamExtractor(String(url), referer);
   } catch {
-    return "";
+    return extractM3u8WithStreamExtractor(iframeUrl, originalReferer || hhkungfuBaseUrl);
   }
 }
 
