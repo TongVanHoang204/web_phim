@@ -66,11 +66,6 @@ const DEFAULT_PAGINATION: PaginationInfo = {
   currentPage: 1,
   totalPages: 1,
 };
-const HOME_MOVIE_DISPLAY_LIMIT = 20;
-const HOME_MOVIE_FETCH_LIMIT = 24;
-const AD_SKIP_START_SECONDS = 14 * 60 + 58;
-const AD_SKIP_END_SECONDS = 15 * 60 + 35;
-const HLS_RETRY_INTERVAL_MS = 2 * 60 * 1000;
 
 const navItems: Array<{ label: string; filter?: HeaderFilter; path?: string; href?: string; isDropdown?: boolean }> = [
   { label: "Trang chủ", filter: "all", path: "/" },
@@ -252,7 +247,7 @@ function useHomeData(initialFilter: HeaderFilter) {
       setError("");
       try {
         const [latest, topItems, categoryItems, countryItems] = await Promise.all([
-          initialFilter === "all" ? getLatestMovies() : getMovies({ type: initialFilter, page: 1, limit: HOME_MOVIE_FETCH_LIMIT }),
+          initialFilter === "all" ? getLatestMovies() : getMovies({ type: initialFilter, page: 1 }),
           getTopViewedMovies(9, initialFilter),
           getCategories(initialFilter),
           getCountries(initialFilter),
@@ -705,27 +700,6 @@ function latestEpisodeFrom<T extends EpisodeItem>(episodes: T[]) {
   return newestEpisodesFirst(episodes)[0] as T | undefined;
 }
 
-function adSkipDuration() {
-  return AD_SKIP_END_SECONDS - AD_SKIP_START_SECONDS;
-}
-
-function visibleDurationFromActual(duration: number) {
-  if (!Number.isFinite(duration) || duration <= 0) return 0;
-  return duration > AD_SKIP_END_SECONDS ? duration - adSkipDuration() : duration;
-}
-
-function visibleTimeFromActual(time: number, duration: number) {
-  if (!Number.isFinite(time) || time <= 0) return 0;
-  if (duration <= AD_SKIP_START_SECONDS || time < AD_SKIP_END_SECONDS) return Math.min(time, visibleDurationFromActual(duration));
-  return Math.min(time - adSkipDuration(), visibleDurationFromActual(duration));
-}
-
-function actualTimeFromVisible(time: number, duration: number) {
-  if (!Number.isFinite(time) || time <= 0) return 0;
-  if (duration <= AD_SKIP_START_SECONDS || time < AD_SKIP_START_SECONDS) return time;
-  return Math.min(time + adSkipDuration(), duration || time);
-}
-
 function watchPath(slug: string, episodeSlug?: string, source?: string) {
   const searchParams = new URLSearchParams();
   if (episodeSlug) searchParams.set("episode", episodeSlug);
@@ -868,7 +842,7 @@ function HlsVideoPlayer({
   function seekToVisibleTime(value: number) {
     const video = videoRef.current;
     if (!video) return;
-    video.currentTime = actualTimeFromVisible(value, duration);
+    video.currentTime = Math.max(0, Math.min(value, duration || value));
     setCurrentTime(video.currentTime);
     showControlsTemporarily();
   }
@@ -876,8 +850,8 @@ function HlsVideoPlayer({
   function skipBy(seconds: number) {
     const video = videoRef.current;
     if (!video) return;
-    const nextVisibleTime = Math.max(0, Math.min(visibleTimeFromActual(video.currentTime, duration) + seconds, visibleDurationFromActual(duration)));
-    seekToVisibleTime(nextVisibleTime);
+    const nextTime = Math.max(0, Math.min(video.currentTime + seconds, duration || video.currentTime + seconds));
+    seekToVisibleTime(nextTime);
   }
 
   function toggleMute() {
@@ -956,25 +930,6 @@ function HlsVideoPlayer({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [duration]);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return undefined;
-    const player = video;
-
-    function skipMidrollAd() {
-      if (player.currentTime >= AD_SKIP_START_SECONDS && player.currentTime < AD_SKIP_END_SECONDS) {
-        player.currentTime = AD_SKIP_END_SECONDS;
-      }
-    }
-
-    player.addEventListener("timeupdate", skipMidrollAd);
-    player.addEventListener("seeking", skipMidrollAd);
-    return () => {
-      player.removeEventListener("timeupdate", skipMidrollAd);
-      player.removeEventListener("seeking", skipMidrollAd);
-    };
-  }, [episode.link_m3u8]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -1148,12 +1103,12 @@ function HlsVideoPlayer({
         <input
           aria-label="Tua phim"
           className="player-seek"
-          max={visibleDurationFromActual(duration)}
+          max={duration}
           min={0}
           onChange={(event) => seekToVisibleTime(Number(event.currentTarget.value))}
           step={0.1}
           type="range"
-          value={visibleTimeFromActual(currentTime, duration)}
+          value={currentTime}
         />
         <div className="player-control-row">
           <div className="player-left-controls">
@@ -1173,7 +1128,7 @@ function HlsVideoPlayer({
               Tập sau <SkipForward size={16} />
             </button>
             <span className="player-time">
-              {formatPlayerTime(visibleTimeFromActual(currentTime, duration))} / {formatPlayerTime(visibleDurationFromActual(duration))}
+              {formatPlayerTime(currentTime)} / {formatPlayerTime(duration)}
             </span>
           </div>
           <div className="player-right-controls">
@@ -1427,7 +1382,6 @@ function WatchPage() {
 
   useEffect(() => {
     let mounted = true;
-    let retryTimer: number | undefined;
     setResolvedActive(null);
 
     if (!active?._id || active.link_m3u8) {
@@ -1449,11 +1403,9 @@ function WatchPage() {
     }
 
     void refreshEpisodeSource();
-    retryTimer = window.setInterval(refreshEpisodeSource, HLS_RETRY_INTERVAL_MS);
 
     return () => {
       mounted = false;
-      if (retryTimer) window.clearInterval(retryTimer);
     };
   }, [active, sourcePreference]);
 
@@ -1600,7 +1552,7 @@ function HomePage({ initialFilter = "all" }: { initialFilter?: HeaderFilter }) {
   const location = useLocation();
 
   const activeMovie = selected || movies[0] || fallbackMovies[0];
-  const featured = useMemo(() => movies.slice(0, HOME_MOVIE_DISPLAY_LIMIT), [movies]);
+  const featured = useMemo(() => movies, [movies]);
 
   useEffect(() => {
     if (movies.length && (!selected || !movies.some((movie) => movie.slug === selected.slug))) {
@@ -1672,7 +1624,7 @@ function HomePage({ initialFilter = "all" }: { initialFilter?: HeaderFilter }) {
     setActiveCategory("");
     setBusy(true);
     try {
-      const results = await getMovies({ type: value || "all", page: 1, limit: HOME_MOVIE_FETCH_LIMIT });
+      const results = await getMovies({ type: value || "all", page: 1 });
       setMovies(results.items);
       setSelected(results.items[0] || null);
       setPagination(results.pagination || DEFAULT_PAGINATION);
@@ -1690,7 +1642,7 @@ function HomePage({ initialFilter = "all" }: { initialFilter?: HeaderFilter }) {
     setFilter(categoryFilter);
     setBusy(true);
     try {
-      const results = await getMoviesByCategory(category.slug, { type: categoryFilter, source: category.source, page: 1, limit: HOME_MOVIE_FETCH_LIMIT });
+      const results = await getMoviesByCategory(category.slug, { type: categoryFilter, source: category.source, page: 1 });
       setMovies(results.items);
       setSelected(results.items[0] || null);
       setPagination(results.pagination || DEFAULT_PAGINATION);
@@ -1707,8 +1659,8 @@ function HomePage({ initialFilter = "all" }: { initialFilter?: HeaderFilter }) {
     setBusy(true);
     try {
       const results = activeCategory
-        ? await getMoviesByCategory(activeCategory, { type: filter || initialFilter, page, limit: HOME_MOVIE_FETCH_LIMIT })
-        : await getMovies({ type: filter || "all", page, limit: HOME_MOVIE_FETCH_LIMIT });
+        ? await getMoviesByCategory(activeCategory, { type: filter || initialFilter, page })
+        : await getMovies({ type: filter || "all", page });
       setMovies(results.items);
       setSelected(results.items[0] || null);
       setPagination(results.pagination || { ...DEFAULT_PAGINATION, currentPage: page });
