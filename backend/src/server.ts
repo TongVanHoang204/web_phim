@@ -1511,6 +1511,35 @@ async function searchMovieApiCandidates(keyword: string, baseUrl: string) {
   }
 }
 
+async function resolveMovieApiDetailCandidatesForHhkungfuPost(post: HhpandaPost, baseUrl: string) {
+  const sourceMovie = normalizeHhkungfuPost(post);
+  const details: PhimApiDetailResponse[] = [];
+  const seenSlugs = new Set<string>();
+
+  const addDetailBySlug = async (slug?: string) => {
+    if (!slug || seenSlugs.has(slug)) return;
+    seenSlugs.add(slug);
+
+    const detail = await fetchMovieApiDetailBySlug(slug, baseUrl);
+    if (detail?.movie && isConfidentMovieMatch(sourceMovie, detail.movie)) {
+      details.push(detail);
+    }
+  };
+
+  await addDetailBySlug(sourceMovie.slug);
+
+  const keywords = [sourceMovie.name, sourceMovie.origin_name].filter(Boolean);
+  for (const keyword of keywords) {
+    const candidates = await searchMovieApiCandidates(keyword, baseUrl);
+    for (const candidate of candidates) {
+      if (!isConfidentMovieMatch(sourceMovie, candidate)) continue;
+      await addDetailBySlug(candidate.slug);
+    }
+  }
+
+  return details;
+}
+
 async function resolvePhimApiDetailForHhkungfuPost(post: HhpandaPost) {
   const sourceMovie = normalizeHhkungfuPost(post);
   const direct = await fetchPhimApiDetailBySlug(sourceMovie.slug);
@@ -1563,19 +1592,20 @@ async function resolveHhkungfuPhimApiHls(episode: { postId: string; chapter: str
   ].filter((source, index, all) => all.findIndex((item) => item.baseUrl === source.baseUrl) === index);
 
   for (const source of sources) {
-    const detail =
-      source.baseUrl === upstreamBaseUrl ? await resolvePhimApiDetailForHhkungfuPost(postResult.data) : await resolveMovieApiDetailForHhkungfuPost(postResult.data, source.baseUrl);
-    if (!detail?.episodes?.length) continue;
+    const details = await resolveMovieApiDetailCandidatesForHhkungfuPost(postResult.data, source.baseUrl);
+    for (const detail of details) {
+      if (!detail.episodes?.length) continue;
 
-    for (const server of preferredPhimApiServers(detail.episodes)) {
-      for (const item of server.server_data || []) {
-        if (!item.link_m3u8 || !isSameEpisode(episode.chapter, item)) continue;
-        return {
-          source: source.name,
-          movie: detail.movie,
-          server_name: server.server_name || source.name,
-          episode: item,
-        };
+      for (const server of preferredPhimApiServers(detail.episodes)) {
+        for (const item of server.server_data || []) {
+          if (!item.link_m3u8 || !isSameEpisode(episode.chapter, item)) continue;
+          return {
+            source: source.name,
+            movie: detail.movie,
+            server_name: server.server_name || source.name,
+            episode: item,
+          };
+        }
       }
     }
   }
