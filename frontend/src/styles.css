@@ -1304,7 +1304,7 @@ a {
 }
 
 .custom-player.controls-visible .player-controls,
-.player-controls:focus-within {
+.custom-player.controls-keyboard-active .player-controls {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0);

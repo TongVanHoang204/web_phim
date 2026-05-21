@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type FocusEvent as ReactFocusEvent, type KeyboardEvent as ReactKeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import Hls from "hls.js";
 import { Link, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
@@ -793,6 +793,7 @@ function HlsVideoPlayer({
   const hideControlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [hlsError, setHlsError] = useState("");
   const [controlsVisible, setControlsVisible] = useState(true);
+  const [controlsKeyboardActive, setControlsKeyboardActive] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [paused, setPaused] = useState(true);
@@ -819,6 +820,38 @@ function HlsVideoPlayer({
     hideControlsTimer.current = setTimeout(() => {
       setControlsVisible(false);
     }, 2400);
+  }
+
+  function isFocusVisibleElement(element: HTMLElement) {
+    try {
+      return element.matches(":focus-visible");
+    } catch {
+      return true;
+    }
+  }
+
+  function handlePlayerMouseMove() {
+    setControlsKeyboardActive(false);
+    showControlsTemporarily();
+  }
+
+  function handleControlsKeyDown(_event: ReactKeyboardEvent<HTMLDivElement>) {
+    setControlsKeyboardActive(true);
+    showControlsTemporarily(true);
+  }
+
+  function handleControlsFocus(event: ReactFocusEvent<HTMLDivElement>) {
+    const target = event.target as HTMLElement;
+    const focusVisible = isFocusVisibleElement(target);
+    setControlsKeyboardActive(focusVisible);
+    if (focusVisible) showControlsTemporarily(true);
+  }
+
+  function handleControlsBlur(event: ReactFocusEvent<HTMLDivElement>) {
+    const nextTarget = event.relatedTarget as Node | null;
+    if (!nextTarget || !event.currentTarget.contains(nextTarget)) {
+      setControlsKeyboardActive(false);
+    }
   }
 
   function togglePlayback() {
@@ -1090,16 +1123,28 @@ function HlsVideoPlayer({
 
   return (
     <div
-      className={controlsVisible || paused ? "custom-player controls-visible" : "custom-player controls-idle"}
+      className={[controlsVisible || paused ? "custom-player controls-visible" : "custom-player controls-idle", controlsKeyboardActive ? "controls-keyboard-active" : ""]
+        .filter(Boolean)
+        .join(" ")}
       onDoubleClick={toggleFullscreen}
-      onMouseMove={() => showControlsTemporarily()}
-      onMouseLeave={() => showControlsTemporarily()}
+      onMouseMove={handlePlayerMouseMove}
+      onMouseLeave={() => {
+        setControlsKeyboardActive(false);
+        showControlsTemporarily();
+      }}
     >
       <video ref={videoRef} aria-label={title} className="native-video" playsInline poster="" onClick={togglePlayback} />
       <button className="player-center-play" onClick={togglePlayback} type="button" aria-label={paused ? "Phát phim" : "Tạm dừng"}>
         {paused ? <Play size={40} fill="currentColor" /> : <Pause size={40} fill="currentColor" />}
       </button>
-      <div className="player-controls" onMouseMove={() => showControlsTemporarily()}>
+      <div
+        className="player-controls"
+        onBlurCapture={handleControlsBlur}
+        onFocusCapture={handleControlsFocus}
+        onKeyDownCapture={handleControlsKeyDown}
+        onMouseMove={handlePlayerMouseMove}
+        onPointerDownCapture={() => setControlsKeyboardActive(false)}
+      >
         <input
           aria-label="Tua phim"
           className="player-seek"
