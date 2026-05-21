@@ -2960,12 +2960,12 @@ app.get("/api/episodes/:episodeId", async (request, response) => {
     const resolvedDirectSource = hlsFallback ? null : await resolveHhkungfuDirectSource(episodeParams);
     const directEmbed = resolvedDirectSource?.playerType === "iframe" ? resolvedDirectSource.url : parseIframeSrc(resolvedDirectSource?.playerHtml || "");
     const proxiedEmbed = streamfreeProxyUrl(directEmbed);
-    const hasHhkungfuEmbed = Boolean(proxiedEmbed || directEmbed);
-    const hasHls = Boolean(hlsFallback || resolvedDirectSource?.playerType === "hls" || hasHhkungfuEmbed);
+    const canResolveEmbedHls = Boolean(streamExtractorUrl && (proxiedEmbed || directEmbed));
+    const hasHls = Boolean(hlsFallback || resolvedDirectSource?.playerType === "hls" || canResolveEmbedHls);
     const hhkungfuHls = hhkungfuHlsUrl(
       request.params.episodeId,
       !hlsFallback && hasHls ? "hhkungfu" : undefined,
-      !hlsFallback && hasHhkungfuEmbed
+      !hlsFallback && canResolveEmbedHls
         ? {
           embed: directEmbed,
           referer: resolvedDirectSource?.referer,
