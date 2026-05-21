@@ -80,13 +80,22 @@ function isInterestingNetworkUrl(url) {
   return /m3u8|mp4|streamfree|hhkungfu|api\/streamfree|cdn-cgi\/rum/i.test(url);
 }
 
+function withTimeout(promise, timeoutMs, fallback = undefined) {
+  return Promise.race([
+    promise,
+    new Promise((resolve) => {
+      setTimeout(() => resolve(fallback), timeoutMs);
+    }),
+  ]);
+}
+
 async function triggerPlayback(page) {
   const frames = page.frames().filter((frame) => /streamfree|api\/streamfree/i.test(frame.url()));
   const targets = frames.length ? frames : [page.mainFrame()];
 
   for (const frame of targets) {
-    await frame
-      .evaluate(() => {
+    await withTimeout(
+      frame.evaluate(() => {
         try {
           const player = typeof window.jwplayer === "function" ? window.jwplayer() : null;
           if (player?.play) player.play();
@@ -95,11 +104,12 @@ async function triggerPlayback(page) {
           const clickable = document.querySelector("button,[role='button'],.jwplayer,.jw-display-icon-container");
           if (clickable instanceof HTMLElement) clickable.click();
         } catch {}
-      })
-      .catch(() => {});
+      }),
+      1000,
+    ).catch(() => {});
 
-    const element = await frame.frameElement().catch(() => null);
-    const box = element ? await element.boundingBox().catch(() => null) : null;
+    const element = await withTimeout(frame.frameElement(), 1000, null).catch(() => null);
+    const box = element ? await withTimeout(element.boundingBox(), 1000, null).catch(() => null) : null;
     if (box) {
       await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2).catch(() => {});
     }
