@@ -18,15 +18,9 @@ services:
       - key: PLAYWRIGHT_BROWSERS_PATH
         value: /opt/render/project/src/backend/ms-playwright
       - key: STREAM_EXTRACTOR_URL
-        fromService:
-          type: web
-          name: tsverse-stream-extractor
-          property: host
+        value: https://tsverse-stream-extractor.onrender.com
       - key: SCRAPER_SERVICE_URL
-        fromService:
-          type: web
-          name: tsverse-stream-extractor
-          property: host
+        value: https://tsverse-stream-extractor.onrender.com
       - key: STREAM_EXTRACTOR_TIMEOUT_MS
         value: "30000"
   - type: web
