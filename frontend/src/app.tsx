@@ -303,6 +303,7 @@ function Header({
   const menuCategories = categories.length ? categories : fallbackCategories;
   const threeDCategories = menuCategories.filter((category) => category.source !== "animehay").slice(0, 12);
   const animeCategories = menuCategories.filter((category) => category.source === "animehay").slice(0, 18);
+  const hasBothCategoryGroups = threeDCategories.length > 0 && animeCategories.length > 0;
 
   function categoryButton(cat: Taxonomy) {
     return onCategory ? (
@@ -339,15 +340,19 @@ function Header({
                   {item.label}
                   <ChevronDown size={15} />
                 </button>
-                <div className="dropdown-menu">
-                  <section className="dropdown-group">
-                    <span>3D</span>
-                    <div>{threeDCategories.map(categoryButton)}</div>
-                  </section>
-                  <section className="dropdown-group">
-                    <span>Anime</span>
-                    <div>{animeCategories.map(categoryButton)}</div>
-                  </section>
+                <div className={`dropdown-menu${hasBothCategoryGroups ? "" : " single-group"}`}>
+                  {threeDCategories.length > 0 ? (
+                    <section className="dropdown-group">
+                      <span>3D</span>
+                      <div>{threeDCategories.map(categoryButton)}</div>
+                    </section>
+                  ) : null}
+                  {animeCategories.length > 0 ? (
+                    <section className="dropdown-group">
+                      <span>Anime</span>
+                      <div>{animeCategories.map(categoryButton)}</div>
+                    </section>
+                  ) : null}
                 </div>
               </div>
             );
