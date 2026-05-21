@@ -201,6 +201,47 @@ async function extractStream({ iframeUrl, referer }) {
 
     await context.addInitScript(() => {
       try {
+        try {
+          const mockParent = new Proxy(window, {
+            get(target, prop) {
+              if (prop === "location") {
+                return {
+                  href: "https://hhkungfu.ee/",
+                  origin: "https://hhkungfu.ee",
+                  protocol: "https:",
+                  host: "hhkungfu.ee",
+                  hostname: "hhkungfu.ee",
+                  pathname: "/",
+                  search: "",
+                  hash: "",
+                };
+              }
+              return target[prop];
+            },
+          });
+
+          try {
+            Object.defineProperty(window, "parent", { get: () => mockParent, configurable: true });
+          } catch {}
+          try {
+            Object.defineProperty(window, "top", { get: () => mockParent, configurable: true });
+          } catch {}
+          try {
+            Object.defineProperty(Window.prototype, "parent", { get: () => mockParent, configurable: true });
+          } catch {}
+          try {
+            Object.defineProperty(Window.prototype, "top", { get: () => mockParent, configurable: true });
+          } catch {}
+
+          const dummyFrame = document.createElement("iframe");
+          try {
+            Object.defineProperty(window, "frameElement", { get: () => dummyFrame, configurable: true });
+          } catch {}
+          try {
+            Object.defineProperty(Window.prototype, "frameElement", { get: () => dummyFrame, configurable: true });
+          } catch {}
+        } catch {}
+
         Object.defineProperty(navigator, "webdriver", { get: () => false, configurable: true });
         Object.defineProperty(window, "outerWidth", { get: () => window.innerWidth, configurable: true });
         Object.defineProperty(window, "outerHeight", { get: () => window.innerHeight, configurable: true });
@@ -285,6 +326,30 @@ async function extractStream({ iframeUrl, referer }) {
 
     await page
       .route("**/cdn-cgi/rum*", (route) => route.fulfill({ status: 204, contentType: "text/plain", body: "" }))
+      .catch(() => {});
+    await page
+      .route("**/*", async (route) => {
+        const request = route.request();
+        const url = request.url();
+        const resourceType = request.resourceType();
+        if (/\/cdn-cgi\/rum/i.test(url)) {
+          await route.fulfill({ status: 204, contentType: "text/plain", body: "" }).catch(() => {});
+          return;
+        }
+        if (/streamfree\.vip/i.test(url) && (resourceType === "document" || /\.m3u8(?:[?#]|$)|\/hls\//i.test(url))) {
+          await route
+            .continue({
+              headers: {
+                ...request.headers(),
+                referer: cleanReferer || "https://hhkungfu.ee/",
+                origin: "https://hhkungfu.ee",
+              },
+            })
+            .catch(() => {});
+          return;
+        }
+        await route.continue().catch(() => {});
+      })
       .catch(() => {});
 
     const refererUrl = cleanReferer ? new URL(cleanReferer) : null;
