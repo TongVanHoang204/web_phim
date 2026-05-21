@@ -22,7 +22,7 @@ const outboundProxyUrl = process.env.OUTBOUND_PROXY_URL || "";
 const rawStreamExtractorUrl = (process.env.STREAM_EXTRACTOR_URL || process.env.SCRAPER_SERVICE_URL || "").trim();
 const streamExtractorUrl = rawStreamExtractorUrl ? (/^https?:\/\//i.test(rawStreamExtractorUrl) ? rawStreamExtractorUrl : `https://${rawStreamExtractorUrl}`).replace(/\/+$/, "") : "";
 const streamExtractorToken = process.env.STREAM_EXTRACTOR_TOKEN || "";
-const streamExtractorTimeoutMs = Number(process.env.STREAM_EXTRACTOR_TIMEOUT_MS || 8000);
+const streamExtractorTimeoutMs = Number(process.env.STREAM_EXTRACTOR_TIMEOUT_MS || 30000);
 const enableHhkungfuPlaywright = process.env.ENABLE_HHKUNGFU_PLAYWRIGHT === "true";
 const preferHhkungfuHls = process.env.PREFER_HHKUNGFU_HLS === "true";
 const corsOrigins = (process.env.CORS_ORIGINS || clientUrl)
