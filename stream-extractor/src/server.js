@@ -94,20 +94,6 @@ async function triggerPlayback(page) {
   const targets = frames.length ? frames : [page.mainFrame()];
 
   for (const frame of targets) {
-    await withTimeout(
-      frame.evaluate(() => {
-        try {
-          const player = typeof window.jwplayer === "function" ? window.jwplayer() : null;
-          if (player?.play) player.play();
-          const video = document.querySelector("video");
-          if (video) void video.play();
-          const clickable = document.querySelector("button,[role='button'],.jwplayer,.jw-display-icon-container");
-          if (clickable instanceof HTMLElement) clickable.click();
-        } catch {}
-      }),
-      1000,
-    ).catch(() => {});
-
     const element = await withTimeout(frame.frameElement(), 1000, null).catch(() => null);
     const box = element ? await withTimeout(element.boundingBox(), 1000, null).catch(() => null) : null;
     if (box) {
