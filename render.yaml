@@ -22,6 +22,11 @@ services:
           type: web
           name: tsverse-stream-extractor
           property: host
+      - key: SCRAPER_SERVICE_URL
+        fromService:
+          type: web
+          name: tsverse-stream-extractor
+          property: host
   - type: web
     name: tsverse-stream-extractor
     runtime: node
@@ -34,3 +39,7 @@ services:
         value: production
       - key: PLAYWRIGHT_BROWSERS_PATH
         value: /opt/render/project/src/stream-extractor/ms-playwright
+      - key: KEEPALIVE_URL
+        value: https://tsverse-stream-extractor.onrender.com/health
+      - key: KEEPALIVE_INTERVAL_MS
+        value: "300000"

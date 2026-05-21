@@ -6,6 +6,7 @@ const target =
 
 const waitMs = Number(process.env.WAIT_MS || 25000);
 const testsStreamfreeDirectly = target.includes("streamfree.vip") || target.includes("/api/streamfree/");
+const allowSourceUnavailable = process.env.ALLOW_SOURCE_UNAVAILABLE === "true";
 
 function isMediaUrl(url) {
   if (url.includes("/hls-proxy") || url.includes("/api/hhkungfu/hls/")) return true;
@@ -302,8 +303,11 @@ async function test() {
     console.log(failedRequests.length ? failedRequests.join("\n") : "(none)");
 
     if (sourceUnavailable) {
-      console.log("\nSOURCE_UNAVAILABLE: app showed the no-stable-HLS fallback state instead of hanging.");
-      return;
+      if (allowSourceUnavailable) {
+        console.log("\nSOURCE_UNAVAILABLE: app showed the no-stable-HLS fallback state instead of hanging.");
+        return;
+      }
+      throw new Error("SOURCE_UNAVAILABLE: app did not load playable media for this episode");
     }
 
     if (!hasUsableVideo && !hasMedia) {
