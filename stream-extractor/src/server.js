@@ -11,6 +11,7 @@ const requestTimeoutMs = Number(process.env.EXTRACTOR_REQUEST_TIMEOUT_MS || 2500
 const maxContexts = Number(process.env.EXTRACTOR_MAX_CONTEXTS || 1);
 const keepAliveUrl = process.env.KEEPALIVE_URL || "";
 const keepAliveIntervalMs = Number(process.env.KEEPALIVE_INTERVAL_MS || 0);
+const extractorProxyUrl = process.env.EXTRACTOR_PROXY_URL || process.env.OUTBOUND_PROXY_URL || "";
 
 app.use(express.json({ limit: "32kb" }));
 
@@ -54,11 +55,30 @@ function escapeAttribute(value) {
     .replace(/>/g, "&gt;");
 }
 
+function playwrightProxyFromUrl(value) {
+  const normalized = normalizeHttpUrl(value);
+  if (!normalized) return undefined;
+
+  try {
+    const url = new URL(normalized);
+    const proxy = {
+      server: `${url.protocol}//${url.hostname}${url.port ? `:${url.port}` : ""}`,
+    };
+    if (url.username) proxy.username = decodeURIComponent(url.username);
+    if (url.password) proxy.password = decodeURIComponent(url.password);
+    return proxy;
+  } catch {
+    return undefined;
+  }
+}
+
 async function getBrowser() {
   if (!browserPromise) {
+    const proxy = playwrightProxyFromUrl(extractorProxyUrl);
     browserPromise = chromium.launch({
       headless: true,
       timeout: launchTimeoutMs,
+      proxy,
       args: [
         "--autoplay-policy=no-user-gesture-required",
         "--disable-blink-features=AutomationControlled",
@@ -73,7 +93,14 @@ async function getBrowser() {
 }
 
 function isLikelyPrimaryPlaylist(url) {
-  return /\.m3u8(?:[?#]|$)/i.test(url) && !/ads?|vast|tracking|analytics/i.test(url);
+  try {
+    const parsed = new URL(url);
+    const mediaPath = `${parsed.hostname}${parsed.pathname}`;
+    return /\.m3u8$/i.test(parsed.pathname) && !/(^|[./_-])(ad|ads|vast|tracking|analytics)([./_-]|$)/i.test(mediaPath);
+  } catch {
+    const mediaPath = String(url).split(/[?#]/)[0];
+    return /\.m3u8$/i.test(mediaPath) && !/(^|[./_-])(ad|ads|vast|tracking|analytics)([./_-]|$)/i.test(mediaPath);
+  }
 }
 
 function isInterestingNetworkUrl(url) {

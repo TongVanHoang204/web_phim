@@ -320,8 +320,10 @@ export async function getMovieDetail(slug: string) {
   };
 }
 
-export async function getEpisodePlayer(episodeId: string) {
-  const { data } = await localClient.get<{ episode?: EpisodeItem }>(`/api/episodes/${episodeId}`);
+export async function getEpisodePlayer(episodeId: string, source?: string) {
+  const { data } = await localClient.get<{ episode?: EpisodeItem }>(`/api/episodes/${episodeId}`, {
+    params: source ? { source } : undefined,
+  });
   return data.episode ? normalizeEpisode(data.episode) : data.episode;
 }
 

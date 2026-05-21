@@ -726,8 +726,18 @@ function actualTimeFromVisible(time: number, duration: number) {
   return Math.min(time + adSkipDuration(), duration || time);
 }
 
-function watchPath(slug: string, episodeSlug?: string) {
-  return `/xem-phim/${slug}${episodeSlug ? `?episode=${episodeSlug}` : ""}`;
+function watchPath(slug: string, episodeSlug?: string, source?: string) {
+  const searchParams = new URLSearchParams();
+  if (episodeSlug) searchParams.set("episode", episodeSlug);
+  if (source) searchParams.set("source", source);
+  const search = searchParams.toString();
+  return `/xem-phim/${slug}${search ? `?${search}` : ""}`;
+}
+
+function sourcePreferenceFromSearch(search: string) {
+  const searchParams = new URLSearchParams(search);
+  const source = (searchParams.get("source") || searchParams.get("prefer") || "").toLowerCase();
+  return source === "hhkungfu" || source === "streamfree" ? source : undefined;
 }
 
 function formatPlayerTime(value: number) {
@@ -1311,6 +1321,8 @@ function MovieDetailPage() {
 function WatchPage() {
   const { slug = "" } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const sourcePreference = sourcePreferenceFromSearch(location.search);
   const [movie, setMovie] = useState<Movie | null>(null);
   const [episodes, setEpisodes] = useState<ReturnType<typeof flattenEpisodes>>([]);
   const [episodeServers, setEpisodeServers] = useState<{ server_name: string; server_data: EpisodeItem[] }[]>([]);
@@ -1321,16 +1333,16 @@ function WatchPage() {
   const playerFrameRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    const searchParams = new URLSearchParams(window.location.search);
+    const searchParams = new URLSearchParams(location.search);
     if (!searchParams.has("server")) return;
     searchParams.delete("server");
     const nextSearch = searchParams.toString();
     navigate(`/xem-phim/${slug}${nextSearch ? `?${nextSearch}` : ""}`, { replace: true });
-  }, [navigate, slug]);
+  }, [location.search, navigate, slug]);
 
   useEffect(() => {
     let mounted = true;
-    const searchParams = new URLSearchParams(window.location.search);
+    const searchParams = new URLSearchParams(location.search);
     const episodeSlug = searchParams.get("episode");
     const serverName = searchParams.get("server");
 
@@ -1366,7 +1378,7 @@ function WatchPage() {
     return () => {
       mounted = false;
     };
-  }, [slug]);
+  }, [location.search, slug]);
 
   useEffect(() => {
     let mounted = true;
@@ -1382,7 +1394,7 @@ function WatchPage() {
     async function refreshEpisodeSource() {
       if (!active?._id) return;
       try {
-        const episode = await getEpisodePlayer(active._id);
+        const episode = await getEpisodePlayer(active._id, sourcePreference);
         if (mounted && episode?.link_embed) {
           setResolvedActive({ ...active, ...episode });
         }
@@ -1398,7 +1410,7 @@ function WatchPage() {
       mounted = false;
       if (retryTimer) window.clearInterval(retryTimer);
     };
-  }, [active]);
+  }, [active, sourcePreference]);
 
   useEffect(() => {
     function isTypingTarget(target: EventTarget | null) {
@@ -1444,7 +1456,7 @@ function WatchPage() {
     if (!movie) return;
     setActive(episode);
     saveWatchHistory(movie, episode);
-    navigate(watchPath(movie.slug, episode.slug), { replace: true });
+    navigate(watchPath(movie.slug, episode.slug, sourcePreference), { replace: true });
   }
 
   return (

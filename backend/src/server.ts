@@ -24,6 +24,7 @@ const streamExtractorUrl = rawStreamExtractorUrl ? (/^https?:\/\//i.test(rawStre
 const streamExtractorToken = process.env.STREAM_EXTRACTOR_TOKEN || "";
 const streamExtractorTimeoutMs = Number(process.env.STREAM_EXTRACTOR_TIMEOUT_MS || 8000);
 const enableHhkungfuPlaywright = process.env.ENABLE_HHKUNGFU_PLAYWRIGHT === "true";
+const preferHhkungfuHls = process.env.PREFER_HHKUNGFU_HLS === "true";
 const corsOrigins = (process.env.CORS_ORIGINS || clientUrl)
   .split(",")
   .map((origin) => origin.trim())
@@ -955,6 +956,11 @@ function requestWantsAnimehay(request: express.Request) {
 function requestWantsAllSources(request: express.Request) {
   const source = String(request.query.source || "").toLowerCase();
   return source === "all" || source === "mixed";
+}
+
+function requestWantsHhkungfuHls(request: express.Request) {
+  const source = String(request.query.source || request.query.prefer || "").toLowerCase();
+  return preferHhkungfuHls || source === "hhkungfu" || source === "streamfree";
 }
 
 function hhkungfuProxyPlayerUrl(postId: string, chapter: string, type: string, sv: string) {
@@ -2025,8 +2031,9 @@ function phimApiHlsProxyUrl(url: string) {
   return `/api/phimapi/hls-proxy?url=${encodeURIComponent(url)}`;
 }
 
-function hhkungfuHlsUrl(episodeId: string) {
-  return `/api/hhkungfu/hls/${episodeId}`;
+function hhkungfuHlsUrl(episodeId: string, source?: string) {
+  const query = source ? `?source=${encodeURIComponent(source)}` : "";
+  return `/api/hhkungfu/hls/${episodeId}${query}`;
 }
 
 function hhkungfuHlsProxyUrl(url: string) {
@@ -2920,15 +2927,36 @@ app.get("/api/episodes/:episodeId", async (request, response) => {
       type: String(episode.type),
       sv: String(episode.sv),
     };
+    const preferDirectSource = requestWantsHhkungfuHls(request);
+    if (preferDirectSource) {
+      response.json({
+        status: true,
+        source: "HHKUNGFU",
+        episode: {
+          _id: request.params.episodeId,
+          playerType: "hls",
+          link_embed: fallbackEmbed,
+          link_m3u8: hhkungfuHlsUrl(request.params.episodeId, "hhkungfu"),
+          fallback_embed: fallbackEmbed,
+          open_external: false,
+          hls_source: {
+            source: "HHKungfu-preferred",
+            episode: episode.chapter,
+          },
+        },
+      });
+      return;
+    }
+
     const hlsFallback = await resolveHhkungfuPhimApiHls({
       postId: episodeParams.postId,
       chapter: episodeParams.chapter,
     });
-    const directSource = hlsFallback ? null : await resolveHhkungfuDirectSource(episodeParams);
-    const directEmbed = directSource?.playerType === "iframe" ? directSource.url : parseIframeSrc(directSource?.playerHtml || "");
+    const resolvedDirectSource = hlsFallback ? null : await resolveHhkungfuDirectSource(episodeParams);
+    const directEmbed = resolvedDirectSource?.playerType === "iframe" ? resolvedDirectSource.url : parseIframeSrc(resolvedDirectSource?.playerHtml || "");
     const proxiedEmbed = streamfreeProxyUrl(directEmbed);
-    const hhkungfuHls = hhkungfuHlsUrl(request.params.episodeId);
-    const hasHls = Boolean(hlsFallback || directSource?.playerType === "hls");
+    const hhkungfuHls = hhkungfuHlsUrl(request.params.episodeId, preferDirectSource ? "hhkungfu" : undefined);
+    const hasHls = Boolean(hlsFallback || resolvedDirectSource?.playerType === "hls");
 
     response.json({
       status: true,
@@ -2943,7 +2971,7 @@ app.get("/api/episodes/:episodeId", async (request, response) => {
         open_external: false,
         hls_source: hasHls
           ? {
-            source: hlsFallback?.source || directSource?.source,
+            source: hlsFallback?.source || resolvedDirectSource?.source,
             movie: hlsFallback?.movie?.slug,
             server: hlsFallback?.server_name,
             episode: hlsFallback ? hlsFallback.episode.slug || hlsFallback.episode.name : episode.chapter,
@@ -3130,8 +3158,13 @@ app.get("/api/hhkungfu/hls/:episodeId", async (request, response) => {
   };
 
   try {
-    if (await sendPhimApiFallback()) return;
-    if (await sendHhkungfuDirectFallback()) return;
+    if (requestWantsHhkungfuHls(request)) {
+      if (await sendHhkungfuDirectFallback()) return;
+      if (await sendPhimApiFallback()) return;
+    } else {
+      if (await sendPhimApiFallback()) return;
+      if (await sendHhkungfuDirectFallback()) return;
+    }
     if (isProduction || !enableHhkungfuPlaywright) {
       response.status(404).type("text/plain").send("Cannot find matching REST or direct HHKungfu HLS");
       return;
@@ -3175,8 +3208,12 @@ app.get("/api/hhkungfu/hls/:episodeId", async (request, response) => {
     response.type("application/vnd.apple.mpegurl").send(rewriteM3u8PlaylistWithProxy(playlist, new URL(resolved.url), hhkungfuHlsProxyUrl));
   } catch (error) {
     try {
-      if (await sendPhimApiFallback()) return;
-      if (await sendHhkungfuDirectFallback()) return;
+      if (requestWantsHhkungfuHls(request)) {
+        if (await sendPhimApiFallback()) return;
+      } else {
+        if (await sendPhimApiFallback()) return;
+        if (await sendHhkungfuDirectFallback()) return;
+      }
     } catch (fallbackError) {
       response.status(502).type("text/plain").send(errorDetail(fallbackError) || errorDetail(error) || "Cannot load HHKungfu HLS");
       return;
