@@ -6,6 +6,7 @@ const port = Number(process.env.PORT || 3000);
 const extractorToken = process.env.STREAM_EXTRACTOR_TOKEN || "";
 const launchTimeoutMs = Number(process.env.EXTRACTOR_LAUNCH_TIMEOUT_MS || 30000);
 const extractTimeoutMs = Number(process.env.EXTRACTOR_TIMEOUT_MS || 18000);
+const attemptTimeoutMs = Number(process.env.EXTRACTOR_ATTEMPT_TIMEOUT_MS || 7000);
 const requestTimeoutMs = Number(process.env.EXTRACTOR_REQUEST_TIMEOUT_MS || 25000);
 const maxContexts = Number(process.env.EXTRACTOR_MAX_CONTEXTS || 1);
 const keepAliveUrl = process.env.KEEPALIVE_URL || "";
@@ -301,8 +302,9 @@ async function extractStream({ iframeUrl, referer }) {
         continue;
       }
 
+      const entryDeadline = Date.now() + Math.min(Math.max(3000, attemptTimeoutMs), Math.max(1000, deadline - Date.now()));
       await page.waitForTimeout(1000);
-      while (!finalM3u8 && Date.now() < deadline) {
+      while (!finalM3u8 && Date.now() < entryDeadline) {
         await triggerPlayback(page);
         await page.waitForTimeout(500);
       }
