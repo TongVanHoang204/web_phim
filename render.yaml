@@ -17,3 +17,5 @@ services:
         value: https://tsverse.vercel.app,http://localhost:5173,http://localhost:5174
       - key: PLAYWRIGHT_BROWSERS_PATH
         value: /opt/render/project/src/backend/ms-playwright
+      - key: ENABLE_HHKUNGFU_PLAYWRIGHT
+        value: "true"
