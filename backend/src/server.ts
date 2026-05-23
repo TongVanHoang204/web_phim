@@ -3,7 +3,7 @@ if (!process.env.PLAYWRIGHT_BROWSERS_PATH && fs.existsSync("/opt/render")) {
   process.env.PLAYWRIGHT_BROWSERS_PATH = "/opt/render/project/src/backend/ms-playwright";
 }
 import cors from "cors";
-import { chromium, Browser } from "playwright";
+import type { Browser } from "playwright";
 import "dotenv/config";
 import express from "express";
 import rateLimit from "express-rate-limit";
@@ -78,6 +78,7 @@ async function resolveHhkungfuHlsWithPlaywright(directEmbedUrl: string, episodeK
 
   if (!playwrightBrowser) {
     console.log(`[PLAYWRIGHT] Launching Chromium. Path: ${process.env.PLAYWRIGHT_BROWSERS_PATH || "default"}`);
+    const { chromium } = await import("playwright");
     playwrightBrowser = await chromium.launch({
       headless: true,
       args: [
