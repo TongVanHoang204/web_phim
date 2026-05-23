@@ -43,6 +43,13 @@ export type EpisodeItem = {
   source_url?: string;
   link_m3u8?: string;
   open_external?: boolean;
+  cut_ranges?: VideoCutRange[];
+};
+
+export type VideoCutRange = {
+  start: number;
+  end: number;
+  label?: string;
 };
 
 export type EpisodeServer = {

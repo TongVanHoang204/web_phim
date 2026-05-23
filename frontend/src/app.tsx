@@ -5,7 +5,6 @@ import { Link, Route, Routes, useLocation, useNavigate, useParams } from "react-
 import {
   ArrowLeft,
   ChevronDown,
-  Crop,
   Film,
   Flame,
   Globe2,
@@ -720,6 +719,57 @@ function sourcePreferenceFromSearch(search: string) {
   return source === "hhkungfu" || source === "streamfree" ? source : undefined;
 }
 
+function parsePlayerTimecode(value: string) {
+  const parts = value
+    .trim()
+    .split(":")
+    .map((part) => Number(part));
+
+  if (!parts.length || parts.some((part) => !Number.isFinite(part) || part < 0)) return NaN;
+  if (parts.length === 1) return parts[0];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  return NaN;
+}
+
+function normalizeCutRanges(ranges?: EpisodeItem["cut_ranges"]) {
+  if (!ranges?.length) return [];
+
+  return ranges
+    .map((range) => ({
+      ...range,
+      start: Math.max(0, Number(range.start)),
+      end: Math.max(0, Number(range.end)),
+    }))
+    .filter((range) => Number.isFinite(range.start) && Number.isFinite(range.end) && range.end > range.start)
+    .sort((left, right) => left.start - right.start);
+}
+
+function cutRangesFromSearch(search: string) {
+  const value = new URLSearchParams(search).get("cut") || "";
+  if (!value.trim()) return [];
+
+  return normalizeCutRanges(
+    value.split(",").map((part, index) => {
+      const [start, end] = part.split("-");
+      return {
+        start: parsePlayerTimecode(start || ""),
+        end: parsePlayerTimecode(end || ""),
+        label: `Cut ${index + 1}`,
+      };
+    }),
+  );
+}
+
+function defaultCutRangesForEpisode(movieSlug: string, episodeSlug: string) {
+  const key = `${movieSlug}:${episodeSlug}`;
+  const rangesByEpisode: Record<string, EpisodeItem["cut_ranges"]> = {
+    "quang-am-chi-ngoai:tap-23": [{ start: 14 * 60 + 59, end: 15 * 60 + 45, label: "Ad break" }],
+  };
+
+  return normalizeCutRanges(rangesByEpisode[key]);
+}
+
 function formatPlayerTime(value: number) {
   if (!Number.isFinite(value) || value <= 0) return "0:00";
   const totalSeconds = Math.floor(value);
@@ -782,22 +832,7 @@ function HlsVideoPlayer({
   const [iframeTimedOut, setIframeTimedOut] = useState(false);
   const [iframeDismissed, setIframeDismissed] = useState(false);
   const [iframeReloadKey, setIframeReloadKey] = useState(0);
-  const [zoomMode, setZoomMode] = useState<"contain" | "cover" | "fill">("contain");
-
-  const zoomLabels = {
-    contain: "Tỷ lệ chuẩn (Mặc định)",
-    cover: "Phóng to / Cắt viền đen",
-    fill: "Kéo giãn đầy màn hình",
-  };
-
-  function toggleZoomMode() {
-    setZoomMode((prev) => {
-      if (prev === "contain") return "cover";
-      if (prev === "cover") return "fill";
-      return "contain";
-    });
-    showControlsTemporarily();
-  }
+  const cutRanges = useMemo(() => normalizeCutRanges(episode.cut_ranges), [episode.cut_ranges]);
 
 
   function clearHideControlsTimer() {
@@ -959,6 +994,11 @@ function HlsVideoPlayer({
     const player = video;
 
     function syncVideoState() {
+      const cutRange = cutRanges.find((range) => player.currentTime >= range.start && player.currentTime < range.end);
+      if (cutRange) {
+        player.currentTime = Math.min(cutRange.end + 0.05, player.duration || cutRange.end + 0.05);
+      }
+
       setCurrentTime(player.currentTime || 0);
       setDuration(player.duration || 0);
       setPaused(player.paused);
@@ -1007,7 +1047,7 @@ function HlsVideoPlayer({
       player.removeEventListener("seeking", revealControlsBriefly);
       player.removeEventListener("seeked", revealControlsBriefly);
     };
-  }, [episode.link_m3u8]);
+  }, [episode.link_m3u8, cutRanges]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -1110,7 +1150,7 @@ function HlsVideoPlayer({
         showControlsTemporarily();
       }}
     >
-      <video ref={videoRef} aria-label={title} className="native-video" playsInline poster="" onClick={togglePlayback} style={{ objectFit: zoomMode }} />
+      <video ref={videoRef} aria-label={title} className="native-video" playsInline poster="" onClick={togglePlayback} />
       <button className="player-center-play" onClick={togglePlayback} type="button" aria-label={paused ? "Phát phim" : "Tạm dừng"}>
         {paused ? <Play size={40} fill="currentColor" /> : <Pause size={40} fill="currentColor" />}
       </button>
@@ -1167,29 +1207,13 @@ function HlsVideoPlayer({
               type="range"
               value={muted ? 0 : volume}
             />
-            <button 
-              onClick={toggleZoomMode} 
-              type="button" 
-              title={zoomLabels[zoomMode]} 
-              aria-label="Chế độ thu phóng"
-              style={{ display: "inline-flex", gap: "6px", alignItems: "center" }}
-            >
-              <Crop size={18} />
-              <span style={{ fontSize: "11px", opacity: 0.9 }}>
-                {zoomMode === "contain" ? "Mặc định" : zoomMode === "cover" ? "Phóng to" : "Kéo giãn"}
-              </span>
-            </button>
             <button onClick={toggleFullscreen} type="button" aria-label="Toàn màn hình">
               <Maximize2 size={18} />
             </button>
           </div>
         </div>
       </div>
-      {hlsError ? (
-        <a className="player-fallback" href={episode.link_embed} rel="noreferrer" target="_blank">
-          Mở player dự phòng
-        </a>
-      ) : null}
+
     </div>
   );
 }
@@ -1357,6 +1381,7 @@ function WatchPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const sourcePreference = sourcePreferenceFromSearch(location.search);
+  const urlCutRanges = useMemo(() => cutRangesFromSearch(location.search), [location.search]);
   const [movie, setMovie] = useState<Movie | null>(null);
   const [episodes, setEpisodes] = useState<ReturnType<typeof flattenEpisodes>>([]);
   const [episodeServers, setEpisodeServers] = useState<{ server_name: string; server_data: EpisodeItem[] }[]>([]);
@@ -1481,7 +1506,15 @@ function WatchPage() {
   const activeIndex = currentServerEpisodes.findIndex((episode) => episode.link_embed === active.link_embed);
   const previousEpisode = activeIndex > 0 ? currentServerEpisodes[activeIndex - 1] : null;
   const nextEpisode = activeIndex >= 0 && activeIndex < currentServerEpisodes.length - 1 ? currentServerEpisodes[activeIndex + 1] : null;
-  const playerEpisode = resolvedActive ? { ...active, ...resolvedActive } : active;
+  const playerEpisode = {
+    ...(resolvedActive ? { ...active, ...resolvedActive } : active),
+    cut_ranges: [
+      ...defaultCutRangesForEpisode(slug, active.slug),
+      ...normalizeCutRanges(active.cut_ranges),
+      ...normalizeCutRanges(resolvedActive?.cut_ranges),
+      ...urlCutRanges,
+    ],
+  };
 
   function selectEpisode(episode: ReturnType<typeof flattenEpisodes>[number]) {
     if (!movie) return;
