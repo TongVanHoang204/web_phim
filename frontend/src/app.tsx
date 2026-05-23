@@ -5,6 +5,7 @@ import { Link, Route, Routes, useLocation, useNavigate, useParams } from "react-
 import {
   ArrowLeft,
   ChevronDown,
+  Crop,
   Film,
   Flame,
   Globe2,
@@ -781,6 +782,22 @@ function HlsVideoPlayer({
   const [iframeTimedOut, setIframeTimedOut] = useState(false);
   const [iframeDismissed, setIframeDismissed] = useState(false);
   const [iframeReloadKey, setIframeReloadKey] = useState(0);
+  const [zoomMode, setZoomMode] = useState<"contain" | "cover" | "fill">("contain");
+
+  const zoomLabels = {
+    contain: "Tỷ lệ chuẩn (Mặc định)",
+    cover: "Phóng to / Cắt viền đen",
+    fill: "Kéo giãn đầy màn hình",
+  };
+
+  function toggleZoomMode() {
+    setZoomMode((prev) => {
+      if (prev === "contain") return "cover";
+      if (prev === "cover") return "fill";
+      return "contain";
+    });
+    showControlsTemporarily();
+  }
 
 
   function clearHideControlsTimer() {
@@ -1093,7 +1110,7 @@ function HlsVideoPlayer({
         showControlsTemporarily();
       }}
     >
-      <video ref={videoRef} aria-label={title} className="native-video" playsInline poster="" onClick={togglePlayback} />
+      <video ref={videoRef} aria-label={title} className="native-video" playsInline poster="" onClick={togglePlayback} style={{ objectFit: zoomMode }} />
       <button className="player-center-play" onClick={togglePlayback} type="button" aria-label={paused ? "Phát phim" : "Tạm dừng"}>
         {paused ? <Play size={40} fill="currentColor" /> : <Pause size={40} fill="currentColor" />}
       </button>
@@ -1150,6 +1167,18 @@ function HlsVideoPlayer({
               type="range"
               value={muted ? 0 : volume}
             />
+            <button 
+              onClick={toggleZoomMode} 
+              type="button" 
+              title={zoomLabels[zoomMode]} 
+              aria-label="Chế độ thu phóng"
+              style={{ display: "inline-flex", gap: "6px", alignItems: "center" }}
+            >
+              <Crop size={18} />
+              <span style={{ fontSize: "11px", opacity: 0.9 }}>
+                {zoomMode === "contain" ? "Mặc định" : zoomMode === "cover" ? "Phóng to" : "Kéo giãn"}
+              </span>
+            </button>
             <button onClick={toggleFullscreen} type="button" aria-label="Toàn màn hình">
               <Maximize2 size={18} />
             </button>
