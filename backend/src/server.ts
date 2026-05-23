@@ -551,7 +551,6 @@ function normalizeHistoryItem(value: Partial<WatchHistoryItem>): WatchHistoryIte
 }
 
 function errorDetail(error: unknown) {
-  if (isProduction) return undefined;
   return error instanceof Error ? error.message : "Unknown error";
 }
 
