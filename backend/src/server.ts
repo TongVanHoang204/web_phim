@@ -71,9 +71,7 @@ async function fetchWithTimeout(url: URL, init: RequestInit = {}, timeoutMs = 80
 
 async function resolveHhkungfuHlsWithPlaywright(directEmbedUrl: string, episodeKey: string) {
   const cached = hhkungfuM3u8Cache.get(episodeKey);
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached;
-  }
+  if (cached && cached.expiresAt > Date.now()) return cached;
 
   if (!playwrightBrowser) {
     if (process.env.RENDER && !process.env.PLAYWRIGHT_BROWSERS_PATH) {
@@ -82,308 +80,252 @@ async function resolveHhkungfuHlsWithPlaywright(directEmbedUrl: string, episodeK
     console.log(`[PLAYWRIGHT] Launching Chromium. Path: ${process.env.PLAYWRIGHT_BROWSERS_PATH || "default"}`);
     playwrightBrowser = await chromium.launch({
       headless: true,
-      args: [
-        "--autoplay-policy=no-user-gesture-required",
-        "--disable-gpu",
-        "--disable-dev-shm-usage",
-        "--no-sandbox",
-        "--disable-site-isolation-trials",
-        "--disable-features=IsolateOrigins,site-per-process",
-        "--disable-web-security"
-      ]
+      args: ["--autoplay-policy=no-user-gesture-required", "--disable-gpu", "--disable-dev-shm-usage", "--no-sandbox", "--disable-site-isolation-trials", "--disable-features=IsolateOrigins,site-per-process", "--disable-web-security"],
     });
   }
 
   const context = await playwrightBrowser.newContext({
-    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    viewport: { width: 1280, height: 720 },
+    screen: { width: 1920, height: 1080 },
+    deviceScaleFactor: 1,
+    hasTouch: false,
+    colorScheme: "dark",
   });
 
-  await context.setExtraHTTPHeaders({
-    "referer": "https://hhkungfu.ee/",
-    "origin": "https://hhkungfu.ee"
-  });
-
+  await context.setExtraHTTPHeaders({ "referer": "https://hhkungfu.ee/", "origin": "https://hhkungfu.ee" });
   const page = await context.newPage();
 
   const logPath = "playwright.log";
   fs.writeFileSync(logPath, `--- PLAYWRIGHT SESSION START (${new Date().toISOString()}) ---\n`);
+  const appendLog = (line: string) => { try { fs.appendFileSync(logPath, line + "\n"); } catch (e) {} };
+  page.on("pageerror", (err) => { appendLog(`[PAGEERROR] ${err.name}: ${err.message}`); });
+  page.on("requestfailed", (req) => { appendLog(`[REQUESTFAILED] ${req.method()} ${req.url()} ${req.failure()?.errorText || ""}`); });
 
-  const appendLog = (line: string) => {
-    try {
-      fs.appendFileSync(logPath, line + "\n");
-    } catch (e) {}
-  };
-
-  page.on("pageerror", (err) => {
-    appendLog(`[PAGEERROR] ${err.name}: ${err.message}\nStack: ${err.stack}`);
-  });
-
-  page.on("requestfailed", (req) => {
-    appendLog(`[REQUESTFAILED] ${req.method()} ${req.url()} ${req.failure()?.errorText || ""}`);
-  });
-
+  // Comprehensive anti-bot bypass covering all 16 streamfree fingerprint checks
   await page.addInitScript(() => {
     try {
-      // 1. Stub iframe check
+      var makeNative = function(fn: Function, name: string) {
+        try { Object.defineProperty(fn, "toString", { value: function() { return "function " + (name || fn.name) + "() { [native code] }"; }, configurable: true }); } catch(e) {}
+        return fn;
+      };
+
+      // Check 0: iframe detection — mock parent/top to look like hhkungfu.ee embedding
       try {
         var mockParent = new Proxy(window, {
           get: function(target, prop) {
-            if (prop === "location") {
-              return {
-                href: "https://hhkungfu.ee/",
-                origin: "https://hhkungfu.ee",
-                protocol: "https:",
-                host: "hhkungfu.ee",
-                hostname: "hhkungfu.ee",
-                pathname: "/",
-                search: "",
-                hash: ""
-              };
-            }
+            if (prop === "location") return { href: "https://hhkungfu.ee/", origin: "https://hhkungfu.ee", protocol: "https:", host: "hhkungfu.ee", hostname: "hhkungfu.ee", pathname: "/", search: "", hash: "" };
             return (target as unknown as Record<PropertyKey, unknown>)[prop];
           }
         });
-
-        try {
-          Object.defineProperty(window, "parent", { get: function() { return mockParent; }, configurable: true });
-        } catch(e) {}
-        try {
-          Object.defineProperty(window, "top", { get: function() { return mockParent; }, configurable: true });
-        } catch(e) {}
-
-        try {
-          Object.defineProperty(Window.prototype, "parent", { get: function() { return mockParent; }, configurable: true });
-        } catch(e) {}
-        try {
-          Object.defineProperty(Window.prototype, "top", { get: function() { return mockParent; }, configurable: true });
-        } catch(e) {}
-
-        try {
-          var proto = Object.getPrototypeOf(window);
-          while (proto) {
-            try {
-              Object.defineProperty(proto, "parent", { get: function() { return mockParent; }, configurable: true });
-            } catch(e) {}
-            try {
-              Object.defineProperty(proto, "top", { get: function() { return mockParent; }, configurable: true });
-            } catch(e) {}
-            proto = Object.getPrototypeOf(proto);
-          }
-        } catch(e) {}
-
+        try { Object.defineProperty(window, "parent", { get: function() { return mockParent; }, configurable: true }); } catch(e) {}
+        try { Object.defineProperty(window, "top", { get: function() { return mockParent; }, configurable: true }); } catch(e) {}
+        try { Object.defineProperty(Window.prototype, "parent", { get: function() { return mockParent; }, configurable: true }); } catch(e) {}
+        try { Object.defineProperty(Window.prototype, "top", { get: function() { return mockParent; }, configurable: true }); } catch(e) {}
         var dummyFrame = document.createElement("iframe");
-        try {
-          Object.defineProperty(window, "frameElement", { get: function() { return dummyFrame; }, configurable: true });
-        } catch(e) {}
-        try {
-          Object.defineProperty(Window.prototype, "frameElement", { get: function() { return dummyFrame; }, configurable: true });
-        } catch(e) {}
+        try { Object.defineProperty(window, "frameElement", { get: function() { return dummyFrame; }, configurable: true }); } catch(e) {}
+        try { Object.defineProperty(Window.prototype, "frameElement", { get: function() { return dummyFrame; }, configurable: true }); } catch(e) {}
+
+        // Mock document.referrer
+        try { Object.defineProperty(document, "referrer", { get: function() { return "https://hhkungfu.ee/"; }, configurable: true }); } catch(e) {}
+        // Mock location.ancestorOrigins
+        try { Object.defineProperty(window.location, "ancestorOrigins", { get: function() { return ["https://hhkungfu.ee"]; }, configurable: true }); } catch(e) {}
+        try { Object.defineProperty(Location.prototype, "ancestorOrigins", { get: function() { return ["https://hhkungfu.ee"]; }, configurable: true }); } catch(e) {}
       } catch(e) {}
 
-      // 2. Completely stub all console methods natively to neutralize devtools detector CDP triggers
-      try {
-        var makeNative = function(fn: Function, name: string) {
-          try {
-            Object.defineProperty(fn, "toString", {
-              value: function() { return "function " + (name || fn.name) + "() { [native code] }"; },
-              configurable: true
-            });
-          } catch(e) {}
-          return fn;
-        };
-        var noop = function() {};
-        var mockConsole: Record<string, Function> = {};
-        var props = ["log", "table", "clear", "dir", "group", "groupCollapsed", "groupEnd", "trace", "warn", "info", "debug", "error"];
-        props.forEach(function(p) {
-          mockConsole[p] = makeNative(noop, p);
-        });
-        window.console = mockConsole as unknown as Console;
-      } catch(e) {}
-
-      // 3. Cap performance.now() and Date.now() timing jumps to defeat date-delay/timing checks
-      try {
-        var realNow = window.performance.now.bind(window.performance);
-        var lastTime = realNow();
-        window.performance.now = function() {
-          var current = realNow();
-          if (current - lastTime > 100) {
-            lastTime += 1;
-          } else {
-            lastTime = current;
-          }
-          return lastTime;
-        };
-      } catch(e) {}
-      try {
-        var realDateNow = Date.now;
-        var lastDate = realDateNow();
-        Date.now = function() {
-          var current = realDateNow();
-          if (current - lastDate > 100) {
-            lastDate += 1;
-          } else {
-            lastDate = current;
-          }
-          return lastDate;
-        };
-      } catch(e) {}
-
-      // 4. Strip dynamic debugger statements
-      try {
-        var nativeFunc = window.Function;
-        (window as unknown as { Function: FunctionConstructor }).Function = (function(this: unknown) {
-          var args = Array.prototype.slice.call(arguments);
-          if (args.length > 0 && typeof args[args.length - 1] === "string") {
-            var body = args[args.length - 1];
-            if (body.includes("debugger")) {
-              args[args.length - 1] = body.replace(/\bdebugger\b/g, "/* debugger neutralized */");
-            }
-          }
-          return nativeFunc.apply(this, args);
-        }) as unknown as FunctionConstructor;
-        ((window as unknown as { Function: FunctionConstructor }).Function as unknown as { prototype: Function["prototype"] }).prototype = nativeFunc.prototype;
-      } catch(e) {}
-
-      // 5. Neutralize webdriver
-      try {
-        Object.defineProperty(navigator, "webdriver", {
-          get: function() { return false; },
-          configurable: true
-        });
-      } catch(e) {}
-
-      // 6. Mock real Chrome object
+      // Check 1+6: chrome object with full runtime mock
       try {
         (window as unknown as { chrome: unknown }).chrome = {
-          app: {
-            isInstalled: false,
-            InstallState: { DISABLED: "disabled", INSTALLED: "installed", NOT_INSTALLED: "not_installed" },
-            RunningState: { CANNOT_RUN: "cannot_run", READY_TO_RUN: "ready_to_run", RUNNING: "running" },
-            getDetails: function() {},
-            getIsInstalled: function() {},
-            install: function() {}
-          },
-          runtime: {
-            OnInstalledReason: { INSTALL: "install", UPDATE: "update", SHARED_MODULE_UPDATE: "shared_module_update", UPDATE_AVAILABLE: "update_available" },
-            OnRestartRequiredReason: { APP_UPDATE: "app_update", OS_UPDATE: "os_update", PERIODIC: "periodic" },
-            PlatformArch: { ARM: "arm", ARM64: "arm64", MIPS: "mips", MIPS64: "mips64", X86_32: "x86-32", X86_64: "x86-64" },
-            PlatformNaclArch: { ARM: "arm", MIPS: "mips", MIPS64: "mips64", X86_32: "x86-32", X86_64: "x86-64" },
-            PlatformOS: { ANDROID: "android", CROS: "cros", LINUX: "linux", MAC: "mac", OPENBSD: "openbsd", WIN: "win" },
-            RequestUpdateCheckStatus: { NO_UPDATE: "no_update", UPDATE_AVAILABLE: "update_available", THROTTLED: "throttled" }
-          }
+          app: { isInstalled: false, InstallState: { DISABLED: "disabled", INSTALLED: "installed", NOT_INSTALLED: "not_installed" }, RunningState: { CANNOT_RUN: "cannot_run", READY_TO_RUN: "ready_to_run", RUNNING: "running" }, getDetails: function() {}, getIsInstalled: function() {}, install: function() {} },
+          runtime: { OnInstalledReason: { INSTALL: "install", UPDATE: "update", SHARED_MODULE_UPDATE: "shared_module_update", UPDATE_AVAILABLE: "update_available" }, OnRestartRequiredReason: { APP_UPDATE: "app_update", OS_UPDATE: "os_update", PERIODIC: "periodic" }, PlatformArch: { ARM: "arm", ARM64: "arm64", MIPS: "mips", MIPS64: "mips64", X86_32: "x86-32", X86_64: "x86-64" }, PlatformNaclArch: { ARM: "arm", MIPS: "mips", MIPS64: "mips64", X86_32: "x86-32", X86_64: "x86-64" }, PlatformOS: { ANDROID: "android", CROS: "cros", LINUX: "linux", MAC: "mac", OPENBSD: "openbsd", WIN: "win" }, RequestUpdateCheckStatus: { NO_UPDATE: "no_update", UPDATE_AVAILABLE: "update_available", THROTTLED: "throttled" } }
         };
       } catch(e) {}
 
-      // 7. Align window dimensions
+      // Check 2: Notification API
       try {
-        var w = function() { return window.innerWidth; };
-        var h = function() { return window.innerHeight; };
-        Object.defineProperty(window, "outerWidth", { get: w, configurable: true });
-        Object.defineProperty(window, "outerHeight", { get: h, configurable: true });
-        Object.defineProperty(Window.prototype, "outerWidth", { get: w, configurable: true });
-        Object.defineProperty(Window.prototype, "outerHeight", { get: h, configurable: true });
+        if (typeof (window as any).Notification === "undefined") {
+          (window as any).Notification = makeNative(function Notification() {}, "Notification");
+          (window as any).Notification.permission = "default";
+          (window as any).Notification.requestPermission = makeNative(function() { return Promise.resolve("default"); }, "requestPermission");
+        }
       } catch(e) {}
+
+      // Check 3: navigator.plugins — mock with PDF viewer plugins
+      try {
+        var mockPlugins = { 0: { name: "PDF Viewer", filename: "internal-pdf-viewer", description: "Portable Document Format", length: 1 }, 1: { name: "Chrome PDF Viewer", filename: "internal-pdf-viewer", description: "", length: 1 }, 2: { name: "Chromium PDF Viewer", filename: "internal-pdf-viewer", description: "", length: 1 }, length: 3, item: function(i: number) { return (this as any)[i] || null; }, namedItem: function(n: string) { for (var j = 0; j < 3; j++) if ((this as any)[j] && (this as any)[j].name === n) return (this as any)[j]; return null; }, refresh: makeNative(function() {}, "refresh") };
+        Object.defineProperty(navigator, "plugins", { get: function() { return mockPlugins; }, configurable: true });
+      } catch(e) {}
+
+      // Check 5: navigator.webdriver
+      try { Object.defineProperty(navigator, "webdriver", { get: function() { return false; }, configurable: true }); } catch(e) {}
+
+      // Check 6b: navigator.hardwareConcurrency + deviceMemory
+      try { Object.defineProperty(navigator, "hardwareConcurrency", { get: function() { return 8; }, configurable: true }); } catch(e) {}
+      try { Object.defineProperty(navigator, "deviceMemory", { get: function() { return 8; }, configurable: true }); } catch(e) {}
+
+      // Check 7: outerWidth/Height match inner
+      try {
+        var gw = function() { return window.innerWidth; }, gh = function() { return window.innerHeight; };
+        Object.defineProperty(window, "outerWidth", { get: gw, configurable: true });
+        Object.defineProperty(window, "outerHeight", { get: gh, configurable: true });
+        Object.defineProperty(Window.prototype, "outerWidth", { get: gw, configurable: true });
+        Object.defineProperty(Window.prototype, "outerHeight", { get: gh, configurable: true });
+      } catch(e) {}
+
+      // Check 10: screen.colorDepth + pixelDepth
+      try { Object.defineProperty(screen, "colorDepth", { get: function() { return 24; }, configurable: true }); } catch(e) {}
+      try { Object.defineProperty(screen, "pixelDepth", { get: function() { return 24; }, configurable: true }); } catch(e) {}
+
+      // Check 11: screen dimensions
+      try { Object.defineProperty(screen, "width", { get: function() { return 1920; }, configurable: true }); } catch(e) {}
+      try { Object.defineProperty(screen, "height", { get: function() { return 1080; }, configurable: true }); } catch(e) {}
+      try { Object.defineProperty(screen, "availWidth", { get: function() { return 1920; }, configurable: true }); } catch(e) {}
+      try { Object.defineProperty(screen, "availHeight", { get: function() { return 1040; }, configurable: true }); } catch(e) {}
+
+      // Check 12: document.hasFocus() always true
+      try { document.hasFocus = makeNative(function() { return true; }, "hasFocus") as () => boolean; } catch(e) {}
+
+      // Check 13: MediaSource exists
+      try {
+        if (typeof (window as any).MediaSource === "undefined") {
+          (window as any).MediaSource = makeNative(function MediaSource() {}, "MediaSource");
+          (window as any).MediaSource.isTypeSupported = makeNative(function(t: string) { return /video\/mp4|video\/webm|audio/i.test(t || ""); }, "isTypeSupported");
+        }
+      } catch(e) {}
+
+      // Console stub — neutralize devtools detector
+      try {
+        var noop = function() {};
+        var mc: Record<string, Function> = {};
+        ["log", "table", "clear", "dir", "group", "groupCollapsed", "groupEnd", "trace", "warn", "info", "debug", "error"].forEach(function(p) { mc[p] = makeNative(noop, p); });
+        window.console = mc as unknown as Console;
+      } catch(e) {}
+
+      // Timing cap — defeat performance.now()/Date.now() delta checks
+      try { var rn = window.performance.now.bind(window.performance); var lt = rn(); window.performance.now = function() { var c = rn(); if (c - lt > 100) lt += 1; else lt = c; return lt; }; } catch(e) {}
+      try { var rdn = Date.now; var ld = rdn(); Date.now = function() { var c = rdn(); if (c - ld > 100) ld += 1; else ld = c; return ld; }; } catch(e) {}
+
+      // Debugger neutralization via Proxy on Function constructor + eval
+      try {
+        var nf = window.Function;
+        var cd = function(v: string) { return typeof v === "string" ? v.replace(/\bdebugger\b/g, "void 0") : v; };
+        (window as unknown as { Function: FunctionConstructor }).Function = new Proxy(nf, {
+          apply: function(t, a, r) { return Reflect.apply(t, a, Array.prototype.map.call(r, cd)); },
+          construct: function(t, r) { return Reflect.construct(t, Array.prototype.map.call(r, cd) as unknown as unknown[]); }
+        }) as unknown as FunctionConstructor;
+        ((window as unknown as { Function: FunctionConstructor }).Function as unknown as { prototype: Function["prototype"] }).prototype = nf.prototype;
+      } catch(e) {}
+      try { var ne = (window as any).eval; (window as any).eval = function(v: string) { return ne.call(window, typeof v === "string" ? v.replace(/\bdebugger\b/g, "void 0") : v); }; } catch(e) {}
+
+      // Block ad/tracking noise
+      try {
+        var isNoise = function(u: string) { return /ibyteimg\.com\/obj\/ad-site-i18n|\/cdn-cgi\/rum/.test(u || ""); };
+        var of = window.fetch;
+        if (of) { window.fetch = function(i: any, o: any) { var u = typeof i === "string" ? i : i && i.url; if (isNoise(u)) return Promise.resolve(new Response("", { status: 204 })); return of.apply(window, arguments as any); } as typeof fetch; }
+      } catch(e) {}
+
+      // Protect video element prototypes from browser extension takeover
+      try { (window as any)._nativeVideoFns = { play: HTMLMediaElement.prototype.play, pause: HTMLMediaElement.prototype.pause, load: HTMLMediaElement.prototype.load }; } catch(e) {}
     } catch(e) {}
   });
 
-  // Intercept all network requests to inject the referer header securely
+  // Route interception: inject correct headers + block ad noise
   await page.route("**/*", async (route) => {
     const req = route.request();
     const url = req.url();
-    const type = req.resourceType();
-    if (url.includes("streamfree.vip") && (type === "document" || url.includes(".m3u8"))) {
-      const headers = {
-        ...req.headers(),
-        "referer": "https://hhkungfu.ee/",
-        "origin": "https://hhkungfu.ee"
-      };
-      await route.continue({ headers });
+    if (url.includes("streamfree.vip") && (req.resourceType() === "document" || url.includes(".m3u8"))) {
+      await route.continue({ headers: { ...req.headers(), "referer": "https://hhkungfu.ee/", "origin": "https://hhkungfu.ee" } });
+    } else if (url.includes("ibyteimg.com") || (url.includes("cdn-cgi/rum") && !url.includes("streamfree"))) {
+      await route.abort();
     } else {
       await route.continue();
     }
   });
 
-  page.on("request", (req) => {
-    const url = req.url();
-    appendLog(`[REQUEST] ${req.method()} ${url}`);
-  });
+  page.on("request", (req) => { appendLog(`[REQUEST] ${req.method()} ${req.url()}`); });
+  page.on("response", (res) => { appendLog(`[RESPONSE] ${res.status()} ${res.url()}`); });
 
-  page.on("response", (res) => {
-    const url = res.url();
-    appendLog(`[RESPONSE] ${res.status()} ${url}`);
-  });
-
+  // Capture m3u8 URL from either direct .m3u8 request or JSON API response containing m3u8
   const resultPromise = new Promise<{ url: string; headers: Record<string, string> }>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(new Error("Timeout waiting for m3u8 stream"));
-    }, 15000);
+    const timeout = setTimeout(() => reject(new Error("Timeout waiting for m3u8 stream (20s)")), 20000);
 
     page.on("request", (req) => {
-      const url = req.url();
-      if (url.includes(".m3u8")) {
+      if (req.url().includes(".m3u8")) {
         clearTimeout(timeout);
-        const headers = req.headers();
-        resolve({
-          url,
-          headers: {
-            "user-agent": headers["user-agent"] || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-            "referer": "https://hhkungfu.ee/",
-            "origin": "https://streamfree.vip"
-          }
-        });
+        const h = req.headers();
+        resolve({ url: req.url(), headers: { "user-agent": h["user-agent"] || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36", "referer": h["referer"] || "https://streamfree.vip/", "origin": h["origin"] || "https://streamfree.vip" } });
       }
+    });
+
+    page.on("response", async (res) => {
+      try {
+        const ct = res.headers()["content-type"] || "";
+        if ((ct.includes("json") || res.url().includes("/api/")) && res.status() === 200) {
+          const text = await res.text().catch(() => "");
+          const m = text.match(/https?:[^"'\s]+\.m3u8[^"'\s]*/);
+          if (m) { clearTimeout(timeout); resolve({ url: m[0].replace(/\\\//g, "/"), headers: { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36", "referer": "https://streamfree.vip/", "origin": "https://streamfree.vip" } }); }
+        }
+      } catch (e) {}
     });
   });
   resultPromise.catch(() => {});
 
   try {
-    // Navigate to the secure localhost context player-frame URL
-    const playerFrameUrl = `http://localhost:8081/api/hhkungfu/player-frame?url=${encodeURIComponent(directEmbedUrl)}`;
-    await page.goto(playerFrameUrl, { waitUntil: "domcontentloaded" });
+    console.log(`[PLAYWRIGHT] Navigating to parent host first: https://hhkungfu.ee/`);
+    await page.goto("https://hhkungfu.ee/", { waitUntil: "domcontentloaded", timeout: 20000 });
 
-    // Wait for the iframe and player scripts to load
+    console.log(`[PLAYWRIGHT] Injecting streamfree iframe under parent origin: ${directEmbedUrl}`);
+    await page.evaluate((embedUrl) => {
+      document.body.innerHTML = "";
+      document.body.style.margin = "0";
+      document.body.style.padding = "0";
+      document.body.style.width = "100vw";
+      document.body.style.height = "100vh";
+      document.body.style.overflow = "hidden";
+      const iframe = document.createElement("iframe");
+      iframe.src = embedUrl;
+      iframe.style.width = "100%";
+      iframe.style.height = "100%";
+      iframe.style.border = "none";
+      iframe.id = "test-player-iframe";
+      document.body.appendChild(iframe);
+    }, directEmbedUrl);
+
+    console.log("[PLAYWRIGHT] Waiting for iframe selector and content frame...");
+    const iframeElement = await page.waitForSelector("iframe#test-player-iframe", { timeout: 15000 });
+    const sfFrame = await iframeElement.contentFrame();
     await page.waitForTimeout(3000);
 
-    // Attempt multi-layered play triggers inside the iframe frame context
-    const frame = page.frames().find(f => f.url().includes("streamfree.vip"));
-    if (frame) {
-      await frame.evaluate(() => {
+    // Trigger play inside streamfree iframe context
+    if (sfFrame) {
+      console.log("[PLAYWRIGHT] Triggering jwplayer/video play inside streamfree iframe...");
+      await sfFrame.evaluate(() => {
         try {
           if (typeof (window as any).jwplayer === "function") {
             (window as any).jwplayer().play();
           } else {
-            const v = document.querySelector("video");
+            var v = document.querySelector("video");
             if (v) v.play();
           }
         } catch (e) {}
       }).catch(() => {});
     }
 
-    // Also attempt center coordinate click of the player iframe
+    // Click center of player iframe to trigger interaction
     try {
-      const frameElement = await page.$("iframe");
-      if (frameElement) {
-        const box = await frameElement.boundingBox();
-        if (box) {
-          await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-        }
+      const box = await iframeElement.boundingBox();
+      if (box) {
+        console.log("[PLAYWRIGHT] Clicking center of player iframe...");
+        await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
       }
     } catch (e) {}
 
     const result = await resultPromise;
-    
-    const entry = {
-      url: result.url,
-      headers: result.headers,
-      expiresAt: Date.now() + 3600 * 1000
-    };
+    const entry = { url: result.url, headers: result.headers, expiresAt: Date.now() + 3600 * 1000 };
     hhkungfuM3u8Cache.set(episodeKey, entry);
-
     return entry;
   } catch (error) {
-    try {
-      await page.screenshot({ path: "c:\\Users\\Hoang\\Desktop\\Working brooo\\TSVERSE\\backend\\playwright_timeout.png" });
-    } catch (e) {}
+    try { await page.screenshot({ path: "playwright_timeout.png" }); } catch (e) {}
     throw error;
   } finally {
     await context.close().catch(() => {});
@@ -3188,7 +3130,7 @@ app.get("/api/hhkungfu/hls/:episodeId", async (request, response) => {
       if (await sendPhimApiFallback()) return;
       if (await sendHhkungfuDirectFallback()) return;
     }
-    if (isProduction || !enableHhkungfuPlaywright) {
+    if (!enableHhkungfuPlaywright) {
       response.status(404).type("text/plain").send("Cannot find matching REST or direct HHKungfu HLS");
       return;
     }
