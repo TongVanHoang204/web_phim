@@ -3,7 +3,7 @@ services:
     name: tsverse-backend
     runtime: node
     plan: free
-    buildCommand: npm install --include=dev && npm --workspace vsmov-backend run build
+    buildCommand: PLAYWRIGHT_BROWSERS_PATH=/opt/render/project/src/backend/ms-playwright npm install --include=dev && PLAYWRIGHT_BROWSERS_PATH=/opt/render/project/src/backend/ms-playwright npm --workspace vsmov-backend run build
     startCommand: npm --workspace vsmov-backend run start
     healthCheckPath: /api/health
     envVars:
