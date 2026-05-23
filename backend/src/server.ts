@@ -74,7 +74,7 @@ async function resolveHhkungfuHlsWithPlaywright(directEmbedUrl: string, episodeK
   if (cached && cached.expiresAt > Date.now()) return cached;
 
   if (!playwrightBrowser) {
-    if (process.env.RENDER && !process.env.PLAYWRIGHT_BROWSERS_PATH) {
+    if (!process.env.PLAYWRIGHT_BROWSERS_PATH && fs.existsSync("/opt/render")) {
       process.env.PLAYWRIGHT_BROWSERS_PATH = "/opt/render/project/src/backend/ms-playwright";
     }
     console.log(`[PLAYWRIGHT] Launching Chromium. Path: ${process.env.PLAYWRIGHT_BROWSERS_PATH || "default"}`);
