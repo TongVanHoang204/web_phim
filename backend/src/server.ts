@@ -80,7 +80,20 @@ async function resolveHhkungfuHlsWithPlaywright(directEmbedUrl: string, episodeK
     console.log(`[PLAYWRIGHT] Launching Chromium. Path: ${process.env.PLAYWRIGHT_BROWSERS_PATH || "default"}`);
     playwrightBrowser = await chromium.launch({
       headless: true,
-      args: ["--autoplay-policy=no-user-gesture-required", "--disable-gpu", "--disable-dev-shm-usage", "--no-sandbox", "--disable-site-isolation-trials", "--disable-features=IsolateOrigins,site-per-process", "--disable-web-security"],
+      args: [
+        "--autoplay-policy=no-user-gesture-required",
+        "--disable-gpu",
+        "--disable-dev-shm-usage",
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--no-first-run",
+        "--no-zygote",
+        "--single-process",
+        "--disable-extensions",
+        "--disable-site-isolation-trials",
+        "--disable-features=IsolateOrigins,site-per-process",
+        "--disable-web-security"
+      ],
     });
   }
 
