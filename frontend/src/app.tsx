@@ -995,12 +995,18 @@ function HlsVideoPlayer({
     if (!video) return undefined;
     const player = video;
 
-    function syncVideoState() {
+    function skipCutRange() {
       const cutRange = cutRanges.find((range) => player.currentTime >= range.start && player.currentTime < range.end);
       if (cutRange) {
         player.currentTime = Math.min(cutRange.end + 0.05, player.duration || cutRange.end + 0.05);
+        return true;
       }
 
+      return false;
+    }
+
+    function syncVideoState() {
+      skipCutRange();
       setCurrentTime(player.currentTime || 0);
       setDuration(player.duration || 0);
       setPaused(player.paused);
@@ -1009,6 +1015,7 @@ function HlsVideoPlayer({
     }
 
     function handlePlay() {
+      skipCutRange();
       setPaused(false);
       showControlsTemporarily();
     }
@@ -1023,6 +1030,7 @@ function HlsVideoPlayer({
     }
 
     function revealControlsBriefly() {
+      skipCutRange();
       showControlsTemporarily();
     }
 
