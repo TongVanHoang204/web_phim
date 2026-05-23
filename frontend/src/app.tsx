@@ -761,10 +761,12 @@ function cutRangesFromSearch(search: string) {
   );
 }
 
-function defaultCutRangesForEpisode(movieSlug: string, episodeSlug: string) {
+function defaultCutRangesForEpisode(source: Movie["source"] | undefined, movieSlug: string, episodeSlug: string) {
+  if (source !== "hhkungfu") return [];
+
   const key = `${movieSlug}:${episodeSlug}`;
   const rangesByEpisode: Record<string, EpisodeItem["cut_ranges"]> = {
-    "quang-am-chi-ngoai:tap-23": [{ start: 14 * 60 + 59, end: 15 * 60 + 45, label: "Ad break" }],
+    "quang-am-chi-ngoai:tap-23": [{ start: 14 * 60 + 58, end: 15 * 60 + 32, label: "Ad break" }],
   };
 
   return normalizeCutRanges(rangesByEpisode[key]);
@@ -1509,7 +1511,7 @@ function WatchPage() {
   const playerEpisode = {
     ...(resolvedActive ? { ...active, ...resolvedActive } : active),
     cut_ranges: [
-      ...defaultCutRangesForEpisode(slug, active.slug),
+      ...defaultCutRangesForEpisode(movie.source, slug, active.slug),
       ...normalizeCutRanges(active.cut_ranges),
       ...normalizeCutRanges(resolvedActive?.cut_ranges),
       ...urlCutRanges,
