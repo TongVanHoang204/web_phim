@@ -216,6 +216,25 @@ async function fetchAndRewritePlaylist(url, headers, request) {
   return rewritePlaylistWithMediaTokens(playlist, new URL(url), headers, request);
 }
 
+async function extractStreamWithRetries(input, attempts = 2) {
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await extractStream(input);
+    } catch (error) {
+      lastError = error;
+      const retryable =
+        Number(error?.statusCode || 500) === 404 &&
+        /yield m3u8|timeout/i.test(error instanceof Error ? error.message : String(error));
+      if (!retryable || attempt === attempts) break;
+      await new Promise((resolve) => setTimeout(resolve, 750));
+    }
+  }
+
+  throw lastError;
+}
+
 async function triggerPlayback(page) {
   const frames = page.frames().filter((frame) => /streamfree|api\/streamfree/i.test(frame.url()));
   const targets = frames.length ? frames : [page.mainFrame()];
@@ -573,11 +592,11 @@ app.post("/api/extract", async (request, response) => {
 
   try {
     const result = await Promise.race([
-      extractStream({
+      extractStreamWithRetries({
         iframeUrl: request.body?.iframeUrl,
         referer: request.body?.referer,
       }),
-      timeoutError(requestTimeoutMs),
+      timeoutError(Math.max(requestTimeoutMs, 45000)),
     ]);
     lastResult = {
       ok: true,
@@ -611,11 +630,11 @@ app.post("/api/extract-playlist", async (request, response) => {
 
   try {
     const result = await Promise.race([
-      extractStream({
+      extractStreamWithRetries({
         iframeUrl: request.body?.iframeUrl,
         referer: request.body?.referer,
       }),
-      timeoutError(requestTimeoutMs),
+      timeoutError(Math.max(requestTimeoutMs, 45000)),
     ]);
     const playlist = await fetchAndRewritePlaylist(result.url, result.headers, request);
     lastResult = {

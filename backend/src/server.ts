@@ -3324,6 +3324,7 @@ app.get("/api/hhkungfu/hls/:episodeId", async (request, response) => {
         response.type("application/vnd.apple.mpegurl").send(extractorPlaylist);
         return;
       }
+      if (isVercelRuntime) throw new Error("Cannot extract proxied HHKungfu HLS from stream-extractor");
       resolvedM3u8Url = await extractM3u8WithStreamExtractor(directEmbed, hhkungfuBaseUrl);
     } else {
       // On Render / local dev: use local Playwright
