@@ -3477,6 +3477,28 @@ async function proxyStreamfreeRequest(request: express.Request, response: expres
   }
 }
 
+app.post("/api/extract", async (request, response) => {
+  const { iframeUrl } = request.body || {};
+  if (!iframeUrl) {
+    response.status(400).json({ success: false, error: "Missing iframeUrl" });
+    return;
+  }
+
+  try {
+    console.log(`[EXTRACT ENDPOINT] Extracting HLS for ${iframeUrl}`);
+    const base64Url = Buffer.from(String(iframeUrl)).toString("base64").slice(0, 16);
+    const episodeKey = `extract-${base64Url}`;
+    const resolved = await resolveHhkungfuHlsWithPlaywright(String(iframeUrl), episodeKey);
+    response.json({ success: true, url: resolved.url });
+  } catch (error) {
+    console.error(`[EXTRACT ENDPOINT] Extraction failed:`, error);
+    response.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown extraction error",
+    });
+  }
+});
+
 app.all("/api/streamfree/*", async (request, response) => {
   const rawPath = ((request.params as unknown as Record<string, string>)[0] || "");
   await proxyStreamfreeRequest(request, response, rawPath);
