@@ -3533,6 +3533,51 @@ app.get("/api/debug/playwright-log", (_request, response) => {
   }
 });
 
+app.get("/api/debug/chrome-check", async (_request, response) => {
+  const startedAt = Date.now();
+  const info: any = { startedAt: new Date().toISOString() };
+  
+  try {
+    const { execSync } = await import("child_process");
+    const browserPath = process.env.PLAYWRIGHT_BROWSERS_PATH || "/opt/render/project/src/backend/ms-playwright";
+    info.browserPath = browserPath;
+    info.pathExists = fs.existsSync(browserPath);
+    
+    if (info.pathExists) {
+      // Find the chrome binary path
+      try {
+        const findCmd = `find "${browserPath}" -type f -name "chrome"`;
+        info.chromePath = execSync(findCmd).toString().trim();
+      } catch (findErr: any) {
+        info.chromePath = "Error finding chrome: " + findErr.message;
+      }
+      
+      if (info.chromePath && !info.chromePath.includes("Error")) {
+        // Run ldd on chrome to check for missing shared libraries
+        try {
+          const lddCmd = `ldd "${info.chromePath}"`;
+          info.lddResult = execSync(lddCmd).toString().split("\n").filter(l => l.includes("not found"));
+        } catch (lddErr: any) {
+          info.lddResult = "Error running ldd: " + lddErr.message;
+        }
+        
+        // Run chrome --version with a 5-second timeout to check if it freezes
+        try {
+          const verCmd = `"${info.chromePath}" --version`;
+          info.chromeVersion = execSync(verCmd, { timeout: 5000 }).toString().trim();
+        } catch (verErr: any) {
+          info.chromeVersion = "Error checking version (might have timed out/frozen): " + verErr.message;
+        }
+      }
+    }
+    
+    info.elapsedMs = Date.now() - startedAt;
+    response.json(info);
+  } catch (error: any) {
+    response.status(500).json({ error: error.message, info });
+  }
+});
+
 app.all("/api/streamfree/*", async (request, response) => {
   const rawPath = ((request.params as unknown as Record<string, string>)[0] || "");
   await proxyStreamfreeRequest(request, response, rawPath);
