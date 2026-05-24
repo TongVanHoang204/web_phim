@@ -150,16 +150,21 @@ async function resolveHhkungfuHlsWithPlaywright(directEmbedUrl: string, episodeK
 
       // Check 0: iframe detection — mock parent/top to look like hhkungfu.ee embedding
       try {
-        var mockParent = new Proxy(window, {
-          get: function(target, prop) {
-            if (prop === "location") return { href: "https://hhkungfu.ee/", origin: "https://hhkungfu.ee", protocol: "https:", host: "hhkungfu.ee", hostname: "hhkungfu.ee", pathname: "/", search: "", hash: "" };
-            return (target as unknown as Record<PropertyKey, unknown>)[prop];
-          }
-        });
-        try { Object.defineProperty(window, "parent", { get: function() { return mockParent; }, configurable: true }); } catch(e) {}
-        try { Object.defineProperty(window, "top", { get: function() { return mockParent; }, configurable: true }); } catch(e) {}
-        try { Object.defineProperty(Window.prototype, "parent", { get: function() { return mockParent; }, configurable: true }); } catch(e) {}
-        try { Object.defineProperty(Window.prototype, "top", { get: function() { return mockParent; }, configurable: true }); } catch(e) {}
+        if (window.self === window.top) {
+          var mockParent = new Proxy(window, {
+            get: function(target, prop) {
+              if (prop === "location") return { href: "https://hhkungfu.ee/", origin: "https://hhkungfu.ee", protocol: "https:", host: "hhkungfu.ee", hostname: "hhkungfu.ee", pathname: "/", search: "", hash: "" };
+              if (prop === "document" || prop === "window" || prop === "self" || prop === "location") {
+                throw new DOMException("Blocked a frame with origin \"https://streamfree.vip\" from accessing a cross-origin frame.");
+              }
+              return (target as unknown as Record<PropertyKey, unknown>)[prop];
+            }
+          });
+          try { Object.defineProperty(window, "parent", { get: function() { return mockParent; }, configurable: true }); } catch(e) {}
+          try { Object.defineProperty(window, "top", { get: function() { return mockParent; }, configurable: true }); } catch(e) {}
+          try { Object.defineProperty(Window.prototype, "parent", { get: function() { return mockParent; }, configurable: true }); } catch(e) {}
+          try { Object.defineProperty(Window.prototype, "top", { get: function() { return mockParent; }, configurable: true }); } catch(e) {}
+        }
         var dummyFrame = document.createElement("iframe");
         try { Object.defineProperty(window, "frameElement", { get: function() { return dummyFrame; }, configurable: true }); } catch(e) {}
         try { Object.defineProperty(Window.prototype, "frameElement", { get: function() { return dummyFrame; }, configurable: true }); } catch(e) {}
