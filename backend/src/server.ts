@@ -1129,6 +1129,7 @@ async function extractPlaylistWithStreamExtractor(iframeUrl: string, referer: st
 
     const payload = (await result.json()) as { success?: boolean; playlist?: string };
     if (!payload.success || !payload.playlist?.trimStart().startsWith("#EXTM3U")) return "";
+    if (payload.playlist.includes("#ENC-AESGCM") || payload.playlist.includes("#EXT-X-B65")) return "";
     return payload.playlist;
   } catch {
     return "";
