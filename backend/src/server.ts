@@ -3499,6 +3499,18 @@ app.post("/api/extract", async (request, response) => {
   }
 });
 
+app.get("/api/debug/playwright-log", (_request, response) => {
+  try {
+    if (fs.existsSync("playwright.log")) {
+      response.type("text/plain").send(fs.readFileSync("playwright.log", "utf8"));
+    } else {
+      response.status(404).send("playwright.log not found");
+    }
+  } catch (e) {
+    response.status(500).send(String(e));
+  }
+});
+
 app.all("/api/streamfree/*", async (request, response) => {
   const rawPath = ((request.params as unknown as Record<string, string>)[0] || "");
   await proxyStreamfreeRequest(request, response, rawPath);
