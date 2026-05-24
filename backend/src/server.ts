@@ -77,8 +77,12 @@ async function resolveHhkungfuHlsWithPlaywright(directEmbedUrl: string, episodeK
   const cached = hhkungfuM3u8Cache.get(episodeKey);
   if (cached && cached.expiresAt > Date.now()) return cached;
 
+  const logPath = "playwright.log";
+  fs.writeFileSync(logPath, `--- PLAYWRIGHT SESSION START (${new Date().toISOString()}) ---\n`);
+  const appendLog = (line: string) => { try { fs.appendFileSync(logPath, line + "\n"); } catch (e) {} };
+
   if (!playwrightBrowser) {
-    console.log(`[PLAYWRIGHT] Launching Chromium. Path: ${process.env.PLAYWRIGHT_BROWSERS_PATH || "default"}`);
+    appendLog(`[PLAYWRIGHT] Launching Chromium. Path: ${process.env.PLAYWRIGHT_BROWSERS_PATH || "default"}`);
     const playwrightModuleName = "playwright";
     const { chromium } = await import(playwrightModuleName);
     try {
@@ -101,15 +105,16 @@ async function resolveHhkungfuHlsWithPlaywright(directEmbedUrl: string, episodeK
       });
     } catch (launchError) {
       const errMsg = launchError instanceof Error ? launchError.message : String(launchError);
-      if (errMsg.includes("Executable doesn't exist") || errMsg.includes("download new browsers")) {
-        console.warn(`[PLAYWRIGHT] Chromium not found! Attempting runtime self-healing installation...`);
+      appendLog(`[PLAYWRIGHT] Launch failed: ${errMsg}`);
+      if (errMsg.includes("Executable doesn't exist") || errMsg.includes("download new browsers") || errMsg.includes("missing libraries")) {
+        appendLog(`[PLAYWRIGHT] Chromium not found or missing libs! Attempting runtime self-healing installation...`);
         try {
           const { execSync } = await import("child_process");
           execSync("npx playwright install chromium", {
             env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH || "/opt/render/project/src/backend/ms-playwright" },
             stdio: "inherit"
           });
-          console.log(`[PLAYWRIGHT] Runtime self-healing install completed successfully. Re-trying launch...`);
+          appendLog(`[PLAYWRIGHT] Runtime self-healing install completed successfully. Re-trying launch...`);
           playwrightBrowser = await chromium.launch({
             headless: true,
             args: [
@@ -128,7 +133,8 @@ async function resolveHhkungfuHlsWithPlaywright(directEmbedUrl: string, episodeK
             ],
           });
         } catch (installError) {
-          console.error(`[PLAYWRIGHT] Runtime self-healing installation failed:`, installError);
+          const instErrMsg = installError instanceof Error ? installError.message : String(installError);
+          appendLog(`[PLAYWRIGHT] Runtime self-healing installation failed: ${instErrMsg}`);
           throw launchError;
         }
       } else {
@@ -137,6 +143,7 @@ async function resolveHhkungfuHlsWithPlaywright(directEmbedUrl: string, episodeK
     }
   }
 
+  appendLog(`[PLAYWRIGHT] Creating browser context...`);
   const context = await playwrightBrowser.newContext({
     userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
     viewport: { width: 1280, height: 720 },
@@ -149,9 +156,6 @@ async function resolveHhkungfuHlsWithPlaywright(directEmbedUrl: string, episodeK
   await context.setExtraHTTPHeaders({ "referer": "https://hhkungfu.ee/", "origin": "https://hhkungfu.ee" });
   const page = await context.newPage();
 
-  const logPath = "playwright.log";
-  fs.writeFileSync(logPath, `--- PLAYWRIGHT SESSION START (${new Date().toISOString()}) ---\n`);
-  const appendLog = (line: string) => { try { fs.appendFileSync(logPath, line + "\n"); } catch (e) {} };
   page.on("pageerror", (err: any) => { appendLog(`[PAGEERROR] ${err.name}: ${err.message}`); });
   page.on("requestfailed", (req: any) => { appendLog(`[REQUESTFAILED] ${req.method()} ${req.url()} ${req.failure()?.errorText || ""}`); });
 
