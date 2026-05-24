@@ -19,3 +19,19 @@ services:
         value: /opt/render/project/src/backend/ms-playwright
       - key: ENABLE_HHKUNGFU_PLAYWRIGHT
         value: "true"
+
+  - type: web
+    name: tsverse-stream-extractor
+    runtime: node
+    plan: free
+    rootDir: stream-extractor
+    buildCommand: npm install && npx playwright install chromium
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: EXTRACTOR_TIMEOUT_MS
+        value: "20000"
+      - key: EXTRACTOR_REQUEST_TIMEOUT_MS
+        value: "30000"

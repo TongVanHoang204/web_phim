@@ -3175,16 +3175,12 @@ app.get("/api/hhkungfu/hls/:episodeId", async (request, response) => {
   try {
     if (requestWantsHhkungfuHls(request)) {
       if (await sendHhkungfuDirectFallback()) return;
-      if (await sendPhimApiFallback()) return;
     } else {
       if (await sendPhimApiFallback()) return;
       if (await sendHhkungfuDirectFallback()) return;
     }
-    if (!enableHhkungfuPlaywright) {
-      response.status(404).type("text/plain").send("Cannot find matching REST or direct HHKungfu HLS");
-      return;
-    }
 
+    // Resolve the player embed URL for Playwright or stream-extractor
     const playerHtml = await fetchHhkungfuPlayerHtml({
       postId: String(episode.postId),
       chapter: String(episode.chapter),
@@ -3202,33 +3198,62 @@ app.get("/api/hhkungfu/hls/:episodeId", async (request, response) => {
       } catch (e) {}
     }
     console.log(`[HLS RESOLVER] Resolved directEmbed URL: ${directEmbed}`);
-    
+
     if (!directEmbed) {
       response.status(404).type("text/plain").send("Cannot resolve player embed");
       return;
     }
 
-    const resolved = await resolveHhkungfuHlsWithPlaywright(directEmbed, request.params.episodeId);
-    
-    const result = await fetch(resolved.url, {
-      headers: {
-        accept: "application/vnd.apple.mpegurl,*/*",
-        ...resolved.headers
+    // Determine extraction strategy: Vercel → stream-extractor HTTP call, Render/local → Playwright
+    const isVercelRuntime = Boolean(process.env.VERCEL);
+    let resolvedM3u8Url = "";
+
+    if (isVercelRuntime || !enableHhkungfuPlaywright) {
+      // On Vercel: delegate to stream-extractor service (Render-hosted Playwright)
+      console.log(`[HLS RESOLVER] Delegating to stream-extractor: ${streamExtractorUrl || "(not configured)"}`);
+      resolvedM3u8Url = await extractM3u8WithStreamExtractor(directEmbed, hhkungfuBaseUrl);
+    } else {
+      // On Render / local dev: use local Playwright
+      try {
+        const resolved = await resolveHhkungfuHlsWithPlaywright(directEmbed, request.params.episodeId);
+        resolvedM3u8Url = resolved.url;
+      } catch (pwError) {
+        console.error(`[HLS RESOLVER] Playwright failed, falling back to stream-extractor:`, pwError instanceof Error ? pwError.message : pwError);
+        resolvedM3u8Url = await extractM3u8WithStreamExtractor(directEmbed, hhkungfuBaseUrl);
+      }
+    }
+
+    if (!resolvedM3u8Url) {
+      // Last resort: try PhimAPI
+      if (await sendPhimApiFallback()) return;
+      response.status(404).type("text/plain").send("Cannot extract HLS from any source");
+      return;
+    }
+
+    const resolvedUrl = assertAllowedHhkungfuDirectMediaUrl(resolvedM3u8Url);
+    const result = await fetchWithTimeout(
+      resolvedUrl,
+      {
+        headers: {
+          accept: "application/vnd.apple.mpegurl,*/*",
+          referer: "https://streamfree.vip/",
+          origin: "https://streamfree.vip",
+          "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+        },
       },
-    });
+      8000,
+      false,
+    );
 
     if (!result.ok) throw new Error(`HHKungfu HLS returned ${result.status}`);
     const playlist = await result.text();
     response.setHeader("cache-control", "no-store");
-    response.type("application/vnd.apple.mpegurl").send(rewriteM3u8PlaylistWithProxy(playlist, new URL(resolved.url), hhkungfuHlsProxyUrl));
+    response.setHeader("x-hls-source", isVercelRuntime ? "stream-extractor" : "playwright");
+    response.type("application/vnd.apple.mpegurl").send(rewriteM3u8PlaylistWithProxy(playlist, resolvedUrl, hhkungfuHlsProxyUrl));
   } catch (error) {
     try {
-      if (requestWantsHhkungfuHls(request)) {
-        if (await sendPhimApiFallback()) return;
-      } else {
-        if (await sendPhimApiFallback()) return;
-        if (await sendHhkungfuDirectFallback()) return;
-      }
+      if (await sendPhimApiFallback()) return;
+      if (await sendHhkungfuDirectFallback()) return;
     } catch (fallbackError) {
       response.status(502).type("text/plain").send(errorDetail(fallbackError) || errorDetail(error) || "Cannot load HHKungfu HLS");
       return;
