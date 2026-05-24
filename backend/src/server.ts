@@ -3,7 +3,7 @@ if (!process.env.PLAYWRIGHT_BROWSERS_PATH && fs.existsSync("/opt/render")) {
   process.env.PLAYWRIGHT_BROWSERS_PATH = "/opt/render/project/src/backend/ms-playwright";
 }
 import cors from "cors";
-import type { Browser } from "playwright";
+// playwright is dynamically imported only on Render (not available on Vercel)
 import "dotenv/config";
 import express from "express";
 import rateLimit from "express-rate-limit";
@@ -48,7 +48,8 @@ type WatchHistoryItem = {
 const watchHistoryByIp = new Map<string, WatchHistoryItem[]>();
 
 const hhkungfuM3u8Cache = new Map<string, { url: string; headers: Record<string, string>; expiresAt: number }>();
-let playwrightBrowser: Browser | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let playwrightBrowser: any = null;
 let outboundProxyAgent: ProxyAgent | null = null;
 
 function fetchDispatcherForOutboundProxy() {
@@ -150,8 +151,8 @@ async function resolveHhkungfuHlsWithPlaywright(directEmbedUrl: string, episodeK
   const logPath = "playwright.log";
   fs.writeFileSync(logPath, `--- PLAYWRIGHT SESSION START (${new Date().toISOString()}) ---\n`);
   const appendLog = (line: string) => { try { fs.appendFileSync(logPath, line + "\n"); } catch (e) {} };
-  page.on("pageerror", (err) => { appendLog(`[PAGEERROR] ${err.name}: ${err.message}`); });
-  page.on("requestfailed", (req) => { appendLog(`[REQUESTFAILED] ${req.method()} ${req.url()} ${req.failure()?.errorText || ""}`); });
+  page.on("pageerror", (err: any) => { appendLog(`[PAGEERROR] ${err.name}: ${err.message}`); });
+  page.on("requestfailed", (req: any) => { appendLog(`[REQUESTFAILED] ${req.method()} ${req.url()} ${req.failure()?.errorText || ""}`); });
 
   // Comprehensive anti-bot bypass covering all 16 streamfree fingerprint checks
   await page.addInitScript(() => {
@@ -281,7 +282,7 @@ async function resolveHhkungfuHlsWithPlaywright(directEmbedUrl: string, episodeK
   });
 
   // Route interception: inject correct headers + block ad noise
-  await page.route("**/*", async (route) => {
+  await page.route("**/*", async (route: any) => {
     const req = route.request();
     const url = req.url();
     if (url.includes("streamfree.vip") && (req.resourceType() === "document" || url.includes(".m3u8"))) {
@@ -293,14 +294,14 @@ async function resolveHhkungfuHlsWithPlaywright(directEmbedUrl: string, episodeK
     }
   });
 
-  page.on("request", (req) => { appendLog(`[REQUEST] ${req.method()} ${req.url()}`); });
-  page.on("response", (res) => { appendLog(`[RESPONSE] ${res.status()} ${res.url()}`); });
+  page.on("request", (req: any) => { appendLog(`[REQUEST] ${req.method()} ${req.url()}`); });
+  page.on("response", (res: any) => { appendLog(`[RESPONSE] ${res.status()} ${res.url()}`); });
 
   // Capture m3u8 URL from either direct .m3u8 request or JSON API response containing m3u8
   const resultPromise = new Promise<{ url: string; headers: Record<string, string> }>((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error("Timeout waiting for m3u8 stream (20s)")), 20000);
 
-    page.on("request", (req) => {
+    page.on("request", (req: any) => {
       if (req.url().includes(".m3u8")) {
         clearTimeout(timeout);
         const h = req.headers();
@@ -308,7 +309,7 @@ async function resolveHhkungfuHlsWithPlaywright(directEmbedUrl: string, episodeK
       }
     });
 
-    page.on("response", async (res) => {
+    page.on("response", async (res: any) => {
       try {
         const ct = res.headers()["content-type"] || "";
         if ((ct.includes("json") || res.url().includes("/api/")) && res.status() === 200) {
@@ -326,7 +327,7 @@ async function resolveHhkungfuHlsWithPlaywright(directEmbedUrl: string, episodeK
     await page.goto("https://hhkungfu.ee/", { waitUntil: "domcontentloaded", timeout: 20000 });
 
     console.log(`[PLAYWRIGHT] Injecting streamfree iframe under parent origin: ${directEmbedUrl}`);
-    await page.evaluate((embedUrl) => {
+    await page.evaluate((embedUrl: any) => {
       document.body.innerHTML = "";
       document.body.style.margin = "0";
       document.body.style.padding = "0";

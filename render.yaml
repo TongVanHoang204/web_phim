@@ -3,7 +3,7 @@ services:
     name: tsverse-backend
     runtime: node
     plan: free
-    buildCommand: PLAYWRIGHT_BROWSERS_PATH=/opt/render/project/src/backend/ms-playwright npm install --include=dev && PLAYWRIGHT_BROWSERS_PATH=/opt/render/project/src/backend/ms-playwright npm --workspace vsmov-backend run build && PLAYWRIGHT_BROWSERS_PATH=/opt/render/project/src/backend/ms-playwright npx playwright install chromium
+    buildCommand: npm install --include=dev && cd backend && npm install playwright@^1.60.0 && cd .. && PLAYWRIGHT_BROWSERS_PATH=/opt/render/project/src/backend/ms-playwright npm --workspace vsmov-backend run build && PLAYWRIGHT_BROWSERS_PATH=/opt/render/project/src/backend/ms-playwright npx playwright install chromium
     startCommand: npm --workspace vsmov-backend run start
     healthCheckPath: /api/health
     envVars:
