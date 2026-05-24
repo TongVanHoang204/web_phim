@@ -2089,6 +2089,62 @@ function rewriteM3u8PlaylistWithProxy(playlist: string, baseUrl: URL, proxyUrl: 
     .join("\n");
 }
 
+const hhkungfuVercelSafeUrlLength = 7500;
+const hhkungfuLongPlaylistUnwrapLimit = 3;
+
+function mediaUrisFromM3u8(playlist: string) {
+  return playlist
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#"));
+}
+
+function hhkungfuProxyWouldExceedVercelLimit(url: URL) {
+  return hhkungfuHlsProxyUrl(String(url)).length > hhkungfuVercelSafeUrlLength;
+}
+
+async function fetchHhkungfuMedia(url: URL, timeoutMs = 10000) {
+  return fetchWithTimeout(
+    url,
+    {
+      headers: {
+        accept: "application/vnd.apple.mpegurl,*/*",
+        referer: "https://hhkungfu.ee/",
+        origin: "https://streamfree.vip",
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+      },
+    },
+    timeoutMs,
+    false,
+  );
+}
+
+async function unwrapHhkungfuLongPlaylistReferences(playlist: string, baseUrl: URL) {
+  let currentPlaylist = playlist;
+  let currentBaseUrl = baseUrl;
+
+  for (let depth = 0; depth < hhkungfuLongPlaylistUnwrapLimit; depth += 1) {
+    const mediaUris = mediaUrisFromM3u8(currentPlaylist);
+    if (mediaUris.length !== 1) break;
+
+    const nestedUrl = assertAllowedHhkungfuDirectMediaUrl(String(new URL(mediaUris[0], currentBaseUrl)));
+    if (!hhkungfuProxyWouldExceedVercelLimit(nestedUrl)) break;
+
+    const result = await fetchHhkungfuMedia(nestedUrl);
+    if (!result.ok) throw new Error(`HHKungfu nested HLS returned ${result.status}`);
+
+    const nestedPlaylist = await result.text();
+    if (!nestedPlaylist.trimStart().startsWith("#EXTM3U")) {
+      throw new Error("HHKungfu long media reference is not an HLS playlist");
+    }
+
+    currentPlaylist = nestedPlaylist;
+    currentBaseUrl = nestedUrl;
+  }
+
+  return { playlist: currentPlaylist, baseUrl: currentBaseUrl };
+}
+
 async function fetchAnimehayM3u8FromWatchPath(watchPath: string) {
   const watchHtml = await fetchAnimehayText(watchPath);
   const playerUrl = parseAnimehayPlayerUrl(watchHtml);
@@ -3164,9 +3220,10 @@ app.get("/api/hhkungfu/hls/:episodeId", async (request, response) => {
 
     if (!result.ok) throw new Error(`HHKungfu direct HLS returned ${result.status}`);
     const playlist = await result.text();
+    const normalized = await unwrapHhkungfuLongPlaylistReferences(playlist, url);
     response.setHeader("cache-control", "no-store");
     response.setHeader("x-hls-source", "hhkungfu-direct");
-    response.type("application/vnd.apple.mpegurl").send(rewriteM3u8PlaylistWithProxy(playlist, url, hhkungfuHlsProxyUrl));
+    response.type("application/vnd.apple.mpegurl").send(rewriteM3u8PlaylistWithProxy(normalized.playlist, normalized.baseUrl, hhkungfuHlsProxyUrl));
     return true;
   };
 
@@ -3245,9 +3302,10 @@ app.get("/api/hhkungfu/hls/:episodeId", async (request, response) => {
 
     if (!result.ok) throw new Error(`HHKungfu HLS returned ${result.status}`);
     const playlist = await result.text();
+    const normalized = await unwrapHhkungfuLongPlaylistReferences(playlist, resolvedUrl);
     response.setHeader("cache-control", "no-store");
     response.setHeader("x-hls-source", isVercelRuntime ? "stream-extractor" : "playwright");
-    response.type("application/vnd.apple.mpegurl").send(rewriteM3u8PlaylistWithProxy(playlist, resolvedUrl, hhkungfuHlsProxyUrl));
+    response.type("application/vnd.apple.mpegurl").send(rewriteM3u8PlaylistWithProxy(normalized.playlist, normalized.baseUrl, hhkungfuHlsProxyUrl));
   } catch (error) {
     try {
       if (await sendPhimApiFallback()) return;
@@ -3293,7 +3351,8 @@ app.get("/api/hhkungfu/hls-proxy*", async (request, response) => {
 
     if (contentType.includes("mpegurl") || url.pathname.endsWith(".m3u8")) {
       const playlist = await result.text();
-      response.type("application/vnd.apple.mpegurl").send(rewriteM3u8PlaylistWithProxy(playlist, url, hhkungfuHlsProxyUrl));
+      const normalized = await unwrapHhkungfuLongPlaylistReferences(playlist, url);
+      response.type("application/vnd.apple.mpegurl").send(rewriteM3u8PlaylistWithProxy(normalized.playlist, normalized.baseUrl, hhkungfuHlsProxyUrl));
       return;
     }
 
