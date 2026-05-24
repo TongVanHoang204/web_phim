@@ -2091,6 +2091,14 @@ function assertAllowedHhkungfuDirectMediaUrl(value: string) {
   return url;
 }
 
+function isStreamfreeMediaUrl(value: string) {
+  try {
+    return new URL(value).hostname === "streamfree.vip";
+  } catch {
+    return false;
+  }
+}
+
 function rewriteM3u8Playlist(playlist: string, baseUrl: URL) {
   return playlist
     .split(/\r?\n/)
@@ -3028,7 +3036,7 @@ app.get("/api/episodes/:episodeId", async (request, response) => {
       sv: String(episode.sv),
     };
     const preferDirectSource = requestWantsHhkungfuHls(request);
-    if (preferDirectSource) {
+    if (preferDirectSource && !process.env.VERCEL) {
       response.json({
         status: true,
         source: "HHKUNGFU",
@@ -3056,11 +3064,12 @@ app.get("/api/episodes/:episodeId", async (request, response) => {
     const directEmbed = resolvedDirectSource?.playerType === "iframe" ? resolvedDirectSource.url : parseIframeSrc(resolvedDirectSource?.playerHtml || "");
     const proxiedEmbed = streamfreeProxyUrl(directEmbed);
     const canResolveEmbedHls = Boolean(streamExtractorUrl && (proxiedEmbed || directEmbed));
-    const hasHls = Boolean(hlsFallback || resolvedDirectSource?.playerType === "hls" || canResolveEmbedHls);
+    const hasPlayableDirectHls = Boolean(resolvedDirectSource?.playerType === "hls" && !isStreamfreeMediaUrl(resolvedDirectSource.url));
+    const hasHls = Boolean(hlsFallback || hasPlayableDirectHls);
     const hhkungfuHls = hhkungfuHlsUrl(
       request.params.episodeId,
-      !hlsFallback && hasHls ? "hhkungfu" : undefined,
-      !hlsFallback && canResolveEmbedHls
+      !hlsFallback && hasPlayableDirectHls ? "hhkungfu" : undefined,
+      !hlsFallback && hasPlayableDirectHls && canResolveEmbedHls
         ? {
           embed: directEmbed,
           referer: resolvedDirectSource?.referer,
