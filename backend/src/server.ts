@@ -3031,7 +3031,7 @@ app.get("/api/phimapi/hls/:episodeId", async (request, response) => {
 });
 
 app.get("/api/phimapi/hls-proxy", async (request, response) => {
-  const rawUrl = String(request.query.url || "");
+  const rawUrl = String(request.query.url || "").replace(/ /g, "+");
 
   if (!rawUrl) {
     response.status(400).type("text/plain").send("Missing media url");
@@ -3256,7 +3256,7 @@ app.get("/api/hhkungfu/hls/:episodeId", async (request, response) => {
 });
 
 app.get("/api/hhkungfu/hls-proxy", async (request, response) => {
-  const rawUrl = String(request.query.url || "");
+  const rawUrl = String(request.query.url || "").replace(/ /g, "+");
 
   if (!rawUrl) {
     response.status(400).type("text/plain").send("Missing media url");
@@ -3350,7 +3350,7 @@ app.get("/api/animehay/hls/:episodeId", async (request, response) => {
 });
 
 app.get("/api/animehay/hls-proxy", async (request, response) => {
-  const rawUrl = String(request.query.url || "");
+  const rawUrl = String(request.query.url || "").replace(/ /g, "+");
 
   if (!rawUrl) {
     response.status(400).type("text/plain").send("Missing media url");
