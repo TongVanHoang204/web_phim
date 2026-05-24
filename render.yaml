@@ -3,7 +3,7 @@ services:
     name: tsverse-backend
     runtime: node
     plan: free
-    buildCommand: PLAYWRIGHT_BROWSERS_PATH=./ms-playwright npm install --include=dev && npm run build && PLAYWRIGHT_BROWSERS_PATH=./ms-playwright npx playwright install chromium
+    buildCommand: PLAYWRIGHT_BROWSERS_PATH=backend/ms-playwright npm install --include=dev && npm run build && PLAYWRIGHT_BROWSERS_PATH=backend/ms-playwright npx playwright install chromium
     startCommand: npm --workspace vsmov-backend run start
     healthCheckPath: /api/health
     envVars:
@@ -25,12 +25,14 @@ services:
     runtime: node
     plan: free
     rootDir: stream-extractor
-    buildCommand: npm install && npx playwright install chromium
+    buildCommand: PLAYWRIGHT_BROWSERS_PATH=./ms-playwright npm install && PLAYWRIGHT_BROWSERS_PATH=./ms-playwright npx playwright install chromium
     startCommand: npm start
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PLAYWRIGHT_BROWSERS_PATH
+        value: ./ms-playwright
       - key: EXTRACTOR_TIMEOUT_MS
         value: "20000"
       - key: EXTRACTOR_REQUEST_TIMEOUT_MS
