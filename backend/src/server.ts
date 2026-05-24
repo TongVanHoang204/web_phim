@@ -79,7 +79,8 @@ async function resolveHhkungfuHlsWithPlaywright(directEmbedUrl: string, episodeK
 
   if (!playwrightBrowser) {
     console.log(`[PLAYWRIGHT] Launching Chromium. Path: ${process.env.PLAYWRIGHT_BROWSERS_PATH || "default"}`);
-    const { chromium } = await import("playwright");
+    const playwrightModuleName = "playwright";
+    const { chromium } = await import(playwrightModuleName);
     try {
       playwrightBrowser = await chromium.launch({
         headless: true,
