@@ -97,7 +97,7 @@ async function resolveHhkungfuHlsWithPlaywright(directEmbedUrl: string, episodeK
     }
 
     if (!playwrightBrowser) {
-      appendLog(`[PLAYWRIGHT] Launching local Chromium. Path: ${process.env.PLAYWRIGHT_BROWSERS_PATH || "default"}`);
+      appendLog(`[PLAYWRIGHT] Launching local Chromium...`);
       const playwrightModuleName = "playwright";
       const { chromium } = await import(playwrightModuleName);
       try {
@@ -122,41 +122,7 @@ async function resolveHhkungfuHlsWithPlaywright(directEmbedUrl: string, episodeK
       } catch (launchError) {
         const errMsg = launchError instanceof Error ? launchError.message : String(launchError);
         appendLog(`[PLAYWRIGHT] Launch failed: ${errMsg}`);
-        if (errMsg.includes("Executable doesn't exist") || errMsg.includes("download new browsers") || errMsg.includes("missing libraries")) {
-          appendLog(`[PLAYWRIGHT] Chromium not found or missing libs! Attempting runtime self-healing installation...`);
-          try {
-            const { execSync } = await import("child_process");
-            execSync("npx playwright install chromium", {
-              env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH || "/opt/render/project/src/backend/ms-playwright" },
-              stdio: "inherit"
-            });
-            appendLog(`[PLAYWRIGHT] Runtime self-healing install completed successfully. Re-trying launch...`);
-            playwrightBrowser = await chromium.launch({
-              headless: true,
-              args: [
-                "--autoplay-policy=no-user-gesture-required",
-                "--disable-gpu",
-                "--disable-software-rasterizer",
-                "--mute-audio",
-                "--disable-dev-shm-usage",
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--no-first-run",
-                "--no-zygote",
-                "--disable-extensions",
-                "--disable-site-isolation-trials",
-                "--disable-features=IsolateOrigins,site-per-process",
-                "--disable-web-security"
-              ],
-            });
-          } catch (installError) {
-            const instErrMsg = installError instanceof Error ? installError.message : String(installError);
-            appendLog(`[PLAYWRIGHT] Runtime self-healing installation failed: ${instErrMsg}`);
-            throw launchError;
-          }
-        } else {
-          throw launchError;
-        }
+        throw launchError;
       }
     }
   }

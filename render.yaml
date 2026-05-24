@@ -3,7 +3,7 @@ services:
     name: tsverse-backend
     runtime: node
     plan: free
-    buildCommand: npm install --include=dev && cd backend && npm install playwright@^1.60.0 && cd .. && PLAYWRIGHT_BROWSERS_PATH=/opt/render/project/src/backend/ms-playwright npm --workspace vsmov-backend run build && PLAYWRIGHT_BROWSERS_PATH=/opt/render/project/src/backend/ms-playwright npx playwright install chromium
+    buildCommand: npm install --include=dev && npm run build && npx playwright install chromium
     startCommand: npm --workspace vsmov-backend run start
     healthCheckPath: /api/health
     envVars:
@@ -15,8 +15,6 @@ services:
         value: https://tsverse.vercel.app
       - key: CORS_ORIGINS
         value: https://tsverse.vercel.app,http://localhost:5173,http://localhost:5174
-      - key: PLAYWRIGHT_BROWSERS_PATH
-        value: /opt/render/project/src/backend/ms-playwright
       - key: ENABLE_HHKUNGFU_PLAYWRIGHT
         value: "true"
 
