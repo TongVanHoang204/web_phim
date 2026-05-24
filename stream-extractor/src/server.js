@@ -212,7 +212,8 @@ async function extractStream({ iframeUrl, referer }) {
             var mockParent = new Proxy(window, {
               get: function(target, prop) {
                 if (prop === "location") return { href: "https://hhkungfu.ee/", origin: "https://hhkungfu.ee", protocol: "https:", host: "hhkungfu.ee", hostname: "hhkungfu.ee", pathname: "/", search: "", hash: "" };
-                if (prop === "document" || prop === "window" || prop === "self" || prop === "location") {
+                if (prop === "self" || prop === "window" || prop === "parent" || prop === "top") return mockParent;
+                if (prop === "document") {
                   throw new DOMException("Blocked a frame with origin \"https://streamfree.vip\" from accessing a cross-origin frame.");
                 }
                 return undefined;
