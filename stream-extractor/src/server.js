@@ -201,93 +201,129 @@ async function extractStream({ iframeUrl, referer }) {
 
     await context.addInitScript(() => {
       try {
-        try {
-          const mockParent = new Proxy(window, {
-            get(target, prop) {
-              if (prop === "location") {
-                return {
-                  href: "https://hhkungfu.ee/",
-                  origin: "https://hhkungfu.ee",
-                  protocol: "https:",
-                  host: "hhkungfu.ee",
-                  hostname: "hhkungfu.ee",
-                  pathname: "/",
-                  search: "",
-                  hash: "",
-                };
-              }
-              return target[prop];
-            },
-          });
-
-          try {
-            Object.defineProperty(window, "parent", { get: () => mockParent, configurable: true });
-          } catch {}
-          try {
-            Object.defineProperty(window, "top", { get: () => mockParent, configurable: true });
-          } catch {}
-          try {
-            Object.defineProperty(Window.prototype, "parent", { get: () => mockParent, configurable: true });
-          } catch {}
-          try {
-            Object.defineProperty(Window.prototype, "top", { get: () => mockParent, configurable: true });
-          } catch {}
-
-          const dummyFrame = document.createElement("iframe");
-          try {
-            Object.defineProperty(window, "frameElement", { get: () => dummyFrame, configurable: true });
-          } catch {}
-          try {
-            Object.defineProperty(Window.prototype, "frameElement", { get: () => dummyFrame, configurable: true });
-          } catch {}
-        } catch {}
-
-        Object.defineProperty(navigator, "webdriver", { get: () => false, configurable: true });
-        Object.defineProperty(window, "outerWidth", { get: () => window.innerWidth, configurable: true });
-        Object.defineProperty(window, "outerHeight", { get: () => window.innerHeight, configurable: true });
-        window.chrome ||= {
-          app: {
-            isInstalled: false,
-            InstallState: { DISABLED: "disabled", INSTALLED: "installed", NOT_INSTALLED: "not_installed" },
-            RunningState: { CANNOT_RUN: "cannot_run", READY_TO_RUN: "ready_to_run", RUNNING: "running" },
-          },
-          runtime: {},
-        };
-
-        const makeNative = (fn, name) => {
-          try {
-            Object.defineProperty(fn, "toString", {
-              value: () => `function ${name}() { [native code] }`,
-              configurable: true,
-            });
-          } catch {}
+        var makeNative = function(fn, name) {
+          try { Object.defineProperty(fn, "toString", { value: function() { return "function " + (name || fn.name) + "() { [native code] }"; }, configurable: true }); } catch(e) {}
           return fn;
         };
-        const noop = function () {};
-        const mockConsole = {};
-        ["log", "table", "clear", "dir", "group", "groupCollapsed", "groupEnd", "trace", "warn", "info", "debug", "error"].forEach((name) => {
-          mockConsole[name] = makeNative(noop, name);
-        });
-        window.console = mockConsole;
 
-        const realPerformanceNow = window.performance?.now?.bind(window.performance);
-        if (realPerformanceNow) {
-          let last = realPerformanceNow();
-          window.performance.now = function () {
-            const current = realPerformanceNow();
-            last = current - last > 100 ? last + 1 : current;
-            return last;
+        // Check 0: iframe detection — mock parent/top to look like hhkungfu.ee embedding
+        try {
+          var mockParent = new Proxy(window, {
+            get: function(target, prop) {
+              if (prop === "location") return { href: "https://hhkungfu.ee/", origin: "https://hhkungfu.ee", protocol: "https:", host: "hhkungfu.ee", hostname: "hhkungfu.ee", pathname: "/", search: "", hash: "" };
+              return target[prop];
+            }
+          });
+          try { Object.defineProperty(window, "parent", { get: function() { return mockParent; }, configurable: true }); } catch(e) {}
+          try { Object.defineProperty(window, "top", { get: function() { return mockParent; }, configurable: true }); } catch(e) {}
+          try { Object.defineProperty(Window.prototype, "parent", { get: function() { return mockParent; }, configurable: true }); } catch(e) {}
+          try { Object.defineProperty(Window.prototype, "top", { get: function() { return mockParent; }, configurable: true }); } catch(e) {}
+          var dummyFrame = document.createElement("iframe");
+          try { Object.defineProperty(window, "frameElement", { get: function() { return dummyFrame; }, configurable: true }); } catch(e) {}
+          try { Object.defineProperty(Window.prototype, "frameElement", { get: function() { return dummyFrame; }, configurable: true }); } catch(e) {}
+
+          // Mock document.referrer
+          try { Object.defineProperty(document, "referrer", { get: function() { return "https://hhkungfu.ee/"; }, configurable: true }); } catch(e) {}
+          // Mock location.ancestorOrigins
+          try { Object.defineProperty(window.location, "ancestorOrigins", { get: function() { return ["https://hhkungfu.ee"]; }, configurable: true }); } catch(e) {}
+          try { Object.defineProperty(Location.prototype, "ancestorOrigins", { get: function() { return ["https://hhkungfu.ee"]; }, configurable: true }); } catch(e) {}
+        } catch(e) {}
+
+        // Check 1+6: chrome object with full runtime mock
+        try {
+          window.chrome = {
+            app: { isInstalled: false, InstallState: { DISABLED: "disabled", INSTALLED: "installed", NOT_INSTALLED: "not_installed" }, RunningState: { CANNOT_RUN: "cannot_run", READY_TO_RUN: "ready_to_run", RUNNING: "running" }, getDetails: function() {}, getIsInstalled: function() {}, install: function() {} },
+            runtime: { OnInstalledReason: { INSTALL: "install", UPDATE: "update", SHARED_MODULE_UPDATE: "shared_module_update", UPDATE_AVAILABLE: "update_available" }, OnRestartRequiredReason: { APP_UPDATE: "app_update", OS_UPDATE: "os_update", PERIODIC: "periodic" }, PlatformArch: { ARM: "arm", ARM64: "arm64", MIPS: "mips", MIPS64: "mips64", X86_32: "x86-32", X86_64: "x86-64" }, PlatformNaclArch: { ARM: "arm", MIPS: "mips", MIPS64: "mips64", X86_32: "x86-32", X86_64: "x86-64" }, PlatformOS: { ANDROID: "android", CROS: "cros", LINUX: "linux", MAC: "mac", OPENBSD: "openbsd", WIN: "win" }, RequestUpdateCheckStatus: { NO_UPDATE: "no_update", UPDATE_AVAILABLE: "update_available", THROTTLED: "throttled" } }
           };
-        }
+        } catch(e) {}
 
-        const realDateNow = Date.now;
-        let lastDate = realDateNow();
-        Date.now = function () {
-          const current = realDateNow();
-          lastDate = current - lastDate > 100 ? lastDate + 1 : current;
-          return lastDate;
-        };
-      } catch {}
+        // Check 2: Notification API
+        try {
+          if (typeof window.Notification === "undefined") {
+            window.Notification = makeNative(function Notification() {}, "Notification");
+            window.Notification.permission = "default";
+            window.Notification.requestPermission = makeNative(function() { return Promise.resolve("default"); }, "requestPermission");
+          }
+        } catch(e) {}
+
+        // Check 3: navigator.plugins — mock with PDF viewer plugins
+        try {
+          var mockPlugins = { 0: { name: "PDF Viewer", filename: "internal-pdf-viewer", description: "Portable Document Format", length: 1 }, 1: { name: "Chrome PDF Viewer", filename: "internal-pdf-viewer", description: "", length: 1 }, 2: { name: "Chromium PDF Viewer", filename: "internal-pdf-viewer", description: "", length: 1 }, length: 3, item: function(i) { return this[i] || null; }, namedItem: function(n) { for (var j = 0; j < 3; j++) if (this[j] && this[j].name === n) return this[j]; return null; }, refresh: makeNative(function() {}, "refresh") };
+          Object.defineProperty(navigator, "plugins", { get: function() { return mockPlugins; }, configurable: true });
+        } catch(e) {}
+
+        // Check 5: navigator.webdriver
+        try { Object.defineProperty(navigator, "webdriver", { get: function() { return false; }, configurable: true }); } catch(e) {}
+
+        // Check 6b: navigator.hardwareConcurrency + deviceMemory
+        try { Object.defineProperty(navigator, "hardwareConcurrency", { get: function() { return 8; }, configurable: true }); } catch(e) {}
+        try { Object.defineProperty(navigator, "deviceMemory", { get: function() { return 8; }, configurable: true }); } catch(e) {}
+
+        // Check 7: outerWidth/Height match inner
+        try {
+          var gw = function() { return window.innerWidth; }, gh = function() { return window.innerHeight; };
+          Object.defineProperty(window, "outerWidth", { get: gw, configurable: true });
+          Object.defineProperty(window, "outerHeight", { get: gh, configurable: true });
+          Object.defineProperty(Window.prototype, "outerWidth", { get: gw, configurable: true });
+          Object.defineProperty(Window.prototype, "outerHeight", { get: gh, configurable: true });
+        } catch(e) {}
+
+        // Check 10: screen.colorDepth + pixelDepth
+        try { Object.defineProperty(screen, "colorDepth", { get: function() { return 24; }, configurable: true }); } catch(e) {}
+        try { Object.defineProperty(screen, "pixelDepth", { get: function() { return 24; }, configurable: true }); } catch(e) {}
+
+        // Check 11: screen dimensions
+        try { Object.defineProperty(screen, "width", { get: function() { return 1920; }, configurable: true }); } catch(e) {}
+        try { Object.defineProperty(screen, "height", { get: function() { return 1080; }, configurable: true }); } catch(e) {}
+        try { Object.defineProperty(screen, "availWidth", { get: function() { return 1920; }, configurable: true }); } catch(e) {}
+        try { Object.defineProperty(screen, "availHeight", { get: function() { return 1040; }, configurable: true }); } catch(e) {}
+
+        // Check 12: document.hasFocus() always true
+        try { document.hasFocus = makeNative(function() { return true; }, "hasFocus"); } catch(e) {}
+
+        // Check 13: MediaSource exists
+        try {
+          if (typeof window.MediaSource === "undefined") {
+            window.MediaSource = makeNative(function MediaSource() {}, "MediaSource");
+            window.MediaSource.isTypeSupported = makeNative(function(t) { return /video\/mp4|video\/webm|audio/i.test(t || ""); }, "isTypeSupported");
+          }
+        } catch(e) {}
+
+        // Console stub — neutralize devtools detector
+        try {
+          var noop = function() {};
+          var mc = {};
+          ["log", "table", "clear", "dir", "group", "groupCollapsed", "groupEnd", "trace", "warn", "info", "debug", "error"].forEach(function(p) { mc[p] = makeNative(noop, p); });
+          window.console = mc;
+        } catch(e) {}
+
+        // Timing cap — defeat performance.now()/Date.now() delta checks
+        try { var rn = window.performance.now.bind(window.performance); var lt = rn(); window.performance.now = function() { var c = rn(); if (c - lt > 100) lt += 1; else lt = c; return lt; }; } catch(e) {}
+        try { var rdn = Date.now; var ld = rdn(); Date.now = function() { var c = rdn(); if (c - ld > 100) ld += 1; else ld = c; return ld; }; } catch(e) {}
+
+        // Debugger neutralization via Proxy on Function constructor + eval
+        try {
+          var nf = window.Function;
+          var cd = function(v) { return typeof v === "string" ? v.replace(/\bdebugger\b/g, "void 0") : v; };
+          window.Function = new Proxy(nf, {
+            construct: function(target, args) {
+              if (args.length > 0) args[args.length - 1] = cd(args[args.length - 1]);
+              return Reflect.construct(target, args);
+            },
+            apply: function(target, thisArg, args) {
+              if (args.length > 0) args[args.length - 1] = cd(args[args.length - 1]);
+              return Reflect.apply(target, thisArg, args);
+            }
+          });
+          var re = window.eval;
+          window.eval = new Proxy(re, {
+            apply: function(target, thisArg, args) {
+              if (args.length > 0 && typeof args[0] === "string") args[0] = cd(args[0]);
+              return Reflect.apply(target, thisArg, args);
+            }
+          });
+        } catch(e) {}
+      } catch(globalErr) {}
     });
 
     const page = await context.newPage();
