@@ -2103,20 +2103,34 @@ function hhkungfuProxyWouldExceedVercelLimit(url: URL) {
   return hhkungfuHlsProxyUrl(String(url)).length > hhkungfuVercelSafeUrlLength;
 }
 
-async function fetchHhkungfuMedia(url: URL, timeoutMs = 10000) {
-  return fetchWithTimeout(
-    url,
-    {
-      headers: {
-        accept: "application/vnd.apple.mpegurl,*/*",
-        referer: "https://hhkungfu.ee/",
-        origin: "https://streamfree.vip",
-        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+function hhkungfuMediaHeaders(referer: string) {
+  return {
+    accept: "application/vnd.apple.mpegurl,*/*",
+    referer,
+    origin: new URL(referer).origin,
+    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+  };
+}
+
+async function fetchHhkungfuMedia(url: URL, referers: string[], timeoutMs = 10000) {
+  let lastResult: Response | null = null;
+
+  for (const referer of referers) {
+    const result = await fetchWithTimeout(
+      url,
+      {
+        headers: hhkungfuMediaHeaders(referer),
       },
-    },
-    timeoutMs,
-    false,
-  );
+      timeoutMs,
+      false,
+    );
+
+    if (result.ok) return result;
+    lastResult = result;
+  }
+
+  if (!lastResult) throw new Error("Missing HHKungfu media referer");
+  return lastResult;
 }
 
 async function unwrapHhkungfuLongPlaylistReferences(playlist: string, baseUrl: URL) {
@@ -2130,7 +2144,11 @@ async function unwrapHhkungfuLongPlaylistReferences(playlist: string, baseUrl: U
     const nestedUrl = assertAllowedHhkungfuDirectMediaUrl(String(new URL(mediaUris[0], currentBaseUrl)));
     if (!hhkungfuProxyWouldExceedVercelLimit(nestedUrl)) break;
 
-    const result = await fetchHhkungfuMedia(nestedUrl);
+    const result = await fetchHhkungfuMedia(nestedUrl, [
+      String(currentBaseUrl),
+      "https://streamfree.vip/",
+      `${hhkungfuBaseUrl}/`,
+    ]);
     if (!result.ok) throw new Error(`HHKungfu nested HLS returned ${result.status}`);
 
     const nestedPlaylist = await result.text();
