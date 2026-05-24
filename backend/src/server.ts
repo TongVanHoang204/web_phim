@@ -1,7 +1,4 @@
 import fs from "fs";
-if (!process.env.PLAYWRIGHT_BROWSERS_PATH && fs.existsSync("/opt/render")) {
-  process.env.PLAYWRIGHT_BROWSERS_PATH = "/opt/render/project/src/backend/ms-playwright";
-}
 import cors from "cors";
 // playwright is dynamically imported only on Render (not available on Vercel)
 import "dotenv/config";
@@ -3505,7 +3502,8 @@ app.get("/api/debug/chrome-check", async (_request, response) => {
   
   try {
     const { execSync } = await import("child_process");
-    const browserPath = process.env.PLAYWRIGHT_BROWSERS_PATH || "/opt/render/project/src/backend/ms-playwright";
+    const defaultHomePath = "/home/render/.cache/ms-playwright";
+    const browserPath = process.env.PLAYWRIGHT_BROWSERS_PATH || (fs.existsSync(defaultHomePath) ? defaultHomePath : "/opt/render/project/src/backend/ms-playwright");
     info.browserPath = browserPath;
     info.pathExists = fs.existsSync(browserPath);
     
