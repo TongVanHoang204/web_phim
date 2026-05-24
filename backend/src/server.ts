@@ -82,63 +82,77 @@ async function resolveHhkungfuHlsWithPlaywright(directEmbedUrl: string, episodeK
   const appendLog = (line: string) => { try { fs.appendFileSync(logPath, line + "\n"); } catch (e) {} };
 
   if (!playwrightBrowser) {
-    appendLog(`[PLAYWRIGHT] Launching Chromium. Path: ${process.env.PLAYWRIGHT_BROWSERS_PATH || "default"}`);
-    const playwrightModuleName = "playwright";
-    const { chromium } = await import(playwrightModuleName);
-    try {
-      playwrightBrowser = await chromium.launch({
-        headless: true,
-        args: [
-          "--autoplay-policy=no-user-gesture-required",
-          "--disable-gpu",
-          "--disable-dev-shm-usage",
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--no-first-run",
-          "--no-zygote",
-          "--single-process",
-          "--disable-extensions",
-          "--disable-site-isolation-trials",
-          "--disable-features=IsolateOrigins,site-per-process",
-          "--disable-web-security"
-        ],
-      });
-    } catch (launchError) {
-      const errMsg = launchError instanceof Error ? launchError.message : String(launchError);
-      appendLog(`[PLAYWRIGHT] Launch failed: ${errMsg}`);
-      if (errMsg.includes("Executable doesn't exist") || errMsg.includes("download new browsers") || errMsg.includes("missing libraries")) {
-        appendLog(`[PLAYWRIGHT] Chromium not found or missing libs! Attempting runtime self-healing installation...`);
-        try {
-          const { execSync } = await import("child_process");
-          execSync("npx playwright install chromium", {
-            env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH || "/opt/render/project/src/backend/ms-playwright" },
-            stdio: "inherit"
-          });
-          appendLog(`[PLAYWRIGHT] Runtime self-healing install completed successfully. Re-trying launch...`);
-          playwrightBrowser = await chromium.launch({
-            headless: true,
-            args: [
-              "--autoplay-policy=no-user-gesture-required",
-              "--disable-gpu",
-              "--disable-dev-shm-usage",
-              "--no-sandbox",
-              "--disable-setuid-sandbox",
-              "--no-first-run",
-              "--no-zygote",
-              "--single-process",
-              "--disable-extensions",
-              "--disable-site-isolation-trials",
-              "--disable-features=IsolateOrigins,site-per-process",
-              "--disable-web-security"
-            ],
-          });
-        } catch (installError) {
-          const instErrMsg = installError instanceof Error ? installError.message : String(installError);
-          appendLog(`[PLAYWRIGHT] Runtime self-healing installation failed: ${instErrMsg}`);
+    const browserlessUrl = process.env.BROWSERLESS_URL;
+    if (browserlessUrl) {
+      appendLog(`[PLAYWRIGHT] Connecting to Browserless.io: ${browserlessUrl}`);
+      const playwrightModuleName = "playwright";
+      const { chromium } = await import(playwrightModuleName);
+      try {
+        playwrightBrowser = await chromium.connectOverCDP(browserlessUrl);
+        appendLog(`[PLAYWRIGHT] Connected to Browserless successfully.`);
+      } catch (connError) {
+        const errMsg = connError instanceof Error ? connError.message : String(connError);
+        appendLog(`[PLAYWRIGHT] Browserless connection failed: ${errMsg}. Falling back to local...`);
+      }
+    }
+
+    if (!playwrightBrowser) {
+      appendLog(`[PLAYWRIGHT] Launching local Chromium. Path: ${process.env.PLAYWRIGHT_BROWSERS_PATH || "default"}`);
+      const playwrightModuleName = "playwright";
+      const { chromium } = await import(playwrightModuleName);
+      try {
+        playwrightBrowser = await chromium.launch({
+          headless: true,
+          args: [
+            "--autoplay-policy=no-user-gesture-required",
+            "--disable-gpu",
+            "--disable-dev-shm-usage",
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--no-first-run",
+            "--no-zygote",
+            "--disable-extensions",
+            "--disable-site-isolation-trials",
+            "--disable-features=IsolateOrigins,site-per-process",
+            "--disable-web-security"
+          ],
+        });
+      } catch (launchError) {
+        const errMsg = launchError instanceof Error ? launchError.message : String(launchError);
+        appendLog(`[PLAYWRIGHT] Launch failed: ${errMsg}`);
+        if (errMsg.includes("Executable doesn't exist") || errMsg.includes("download new browsers") || errMsg.includes("missing libraries")) {
+          appendLog(`[PLAYWRIGHT] Chromium not found or missing libs! Attempting runtime self-healing installation...`);
+          try {
+            const { execSync } = await import("child_process");
+            execSync("npx playwright install chromium", {
+              env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH || "/opt/render/project/src/backend/ms-playwright" },
+              stdio: "inherit"
+            });
+            appendLog(`[PLAYWRIGHT] Runtime self-healing install completed successfully. Re-trying launch...`);
+            playwrightBrowser = await chromium.launch({
+              headless: true,
+              args: [
+                "--autoplay-policy=no-user-gesture-required",
+                "--disable-gpu",
+                "--disable-dev-shm-usage",
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--no-first-run",
+                "--no-zygote",
+                "--disable-extensions",
+                "--disable-site-isolation-trials",
+                "--disable-features=IsolateOrigins,site-per-process",
+                "--disable-web-security"
+              ],
+            });
+          } catch (installError) {
+            const instErrMsg = installError instanceof Error ? installError.message : String(installError);
+            appendLog(`[PLAYWRIGHT] Runtime self-healing installation failed: ${instErrMsg}`);
+            throw launchError;
+          }
+        } else {
           throw launchError;
         }
-      } else {
-        throw launchError;
       }
     }
   }
