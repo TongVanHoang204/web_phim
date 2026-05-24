@@ -3502,8 +3502,7 @@ app.get("/api/debug/chrome-check", async (_request, response) => {
   
   try {
     const { execSync } = await import("child_process");
-    const defaultHomePath = "/home/render/.cache/ms-playwright";
-    const browserPath = process.env.PLAYWRIGHT_BROWSERS_PATH || (fs.existsSync(defaultHomePath) ? defaultHomePath : "/opt/render/project/src/backend/ms-playwright");
+    const browserPath = process.env.PLAYWRIGHT_BROWSERS_PATH || "./ms-playwright";
     info.browserPath = browserPath;
     info.pathExists = fs.existsSync(browserPath);
     
