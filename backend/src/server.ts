@@ -2027,7 +2027,12 @@ function hhkungfuHlsUrl(episodeId: string, source?: string, params: Record<strin
 }
 
 function hhkungfuHlsProxyUrl(url: string) {
-  return `/api/hhkungfu/hls-proxy?url=${encodeURIComponent(url)}`;
+  try {
+    const parsed = new URL(url);
+    return `/api/hhkungfu/hls-proxy${parsed.pathname}${parsed.search}`;
+  } catch (e) {
+    return `/api/hhkungfu/hls-proxy?url=${encodeURIComponent(url)}`;
+  }
 }
 
 function assertAllowedAnimehayMediaUrl(value: string) {
@@ -3256,16 +3261,22 @@ app.get("/api/hhkungfu/hls/:episodeId", async (request, response) => {
   }
 });
 
-app.get("/api/hhkungfu/hls-proxy", async (request, response) => {
-  const rawUrl = String(request.query.url || "").replace(/ /g, "+");
-
-  if (!rawUrl) {
-    response.status(400).type("text/plain").send("Missing media url");
-    return;
-  }
+app.get("/api/hhkungfu/hls-proxy*", async (request, response) => {
+  const rawPath = (request.params as unknown as Record<string, string>)[0] || "";
+  const queryUrl = String(request.query.url || "").replace(/ /g, "+");
 
   try {
-    const url = new URL(rawUrl);
+    let url: URL;
+    if (rawPath) {
+      const fullPath = rawPath + (request.url.includes("?") ? request.url.substring(request.url.indexOf("?")) : "");
+      url = new URL(fullPath, "https://streamfree.vip");
+    } else if (queryUrl) {
+      url = new URL(queryUrl);
+    } else {
+      response.status(400).type("text/plain").send("Missing media path or url");
+      return;
+    }
+
     const result = await fetch(url, {
       headers: {
         accept: "*/*",
