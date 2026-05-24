@@ -1104,6 +1104,37 @@ async function extractM3u8WithStreamExtractor(iframeUrl: string, referer: string
   }
 }
 
+async function extractPlaylistWithStreamExtractor(iframeUrl: string, referer: string) {
+  if (!streamExtractorUrl || !iframeUrl) return "";
+
+  try {
+    const url = new URL("/api/extract-playlist", streamExtractorUrl);
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+      accept: "application/json",
+    };
+    if (streamExtractorToken) headers.authorization = `Bearer ${streamExtractorToken}`;
+
+    const result = await fetchWithTimeout(
+      url,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ iframeUrl, referer }),
+      },
+      streamExtractorTimeoutMs + 10000,
+      false,
+    );
+    if (!result.ok) return "";
+
+    const payload = (await result.json()) as { success?: boolean; playlist?: string };
+    if (!payload.success || !payload.playlist?.trimStart().startsWith("#EXTM3U")) return "";
+    return payload.playlist;
+  } catch {
+    return "";
+  }
+}
+
 async function extractM3u8FromStreamfree(iframeUrl: string, originalReferer: string) {
   if (!iframeUrl) return "";
   try {
@@ -3205,6 +3236,8 @@ app.get("/api/hhkungfu/hls/:episodeId", async (request, response) => {
   };
 
   const sendHhkungfuDirectFallback = async () => {
+    if (process.env.VERCEL && streamExtractorUrl) return false;
+
     const embedHint = String(request.query.embed || "");
     const refererHint = String(request.query.referer || "");
     const hintedM3u8 = embedHint ? await extractM3u8FromStreamfree(embedHint, refererHint || hhkungfuBaseUrl) : "";
@@ -3284,6 +3317,13 @@ app.get("/api/hhkungfu/hls/:episodeId", async (request, response) => {
     if (isVercelRuntime || !enableHhkungfuPlaywright) {
       // On Vercel: delegate to stream-extractor service (Render-hosted Playwright)
       console.log(`[HLS RESOLVER] Delegating to stream-extractor: ${streamExtractorUrl || "(not configured)"}`);
+      const extractorPlaylist = await extractPlaylistWithStreamExtractor(directEmbed, hhkungfuBaseUrl);
+      if (extractorPlaylist) {
+        response.setHeader("cache-control", "no-store");
+        response.setHeader("x-hls-source", "stream-extractor-proxy");
+        response.type("application/vnd.apple.mpegurl").send(extractorPlaylist);
+        return;
+      }
       resolvedM3u8Url = await extractM3u8WithStreamExtractor(directEmbed, hhkungfuBaseUrl);
     } else {
       // On Render / local dev: use local Playwright

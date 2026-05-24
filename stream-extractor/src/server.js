@@ -1,5 +1,6 @@
 import express from "express";
 import { chromium } from "playwright";
+import { randomUUID } from "node:crypto";
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -14,11 +15,24 @@ const keepAliveIntervalMs = Number(process.env.KEEPALIVE_INTERVAL_MS || 0);
 const extractorProxyUrl = process.env.EXTRACTOR_PROXY_URL || process.env.OUTBOUND_PROXY_URL || "";
 
 app.use(express.json({ limit: "32kb" }));
+app.use((request, response, next) => {
+  response.setHeader("access-control-allow-origin", "*");
+  response.setHeader("access-control-allow-methods", "GET,POST,OPTIONS");
+  response.setHeader("access-control-allow-headers", "authorization,content-type,range");
+  response.setHeader("access-control-expose-headers", "content-length,content-range,content-type,accept-ranges");
+  if (request.method === "OPTIONS") {
+    response.status(204).end();
+    return;
+  }
+  next();
+});
 
 let browserPromise = null;
 let activeContexts = 0;
 let totalRequests = 0;
 let lastResult = null;
+const mediaTokenCache = new Map();
+const mediaTokenTtlMs = Number(process.env.MEDIA_TOKEN_TTL_MS || 20 * 60 * 1000);
 
 function assertAuthorized(request, response) {
   if (!extractorToken) return true;
@@ -114,6 +128,92 @@ function withTimeout(promise, timeoutMs, fallback = undefined) {
       setTimeout(() => resolve(fallback), timeoutMs);
     }),
   ]);
+}
+
+function publicBaseUrl(request) {
+  const configured = normalizeHttpUrl(process.env.PUBLIC_BASE_URL);
+  if (configured) return configured.replace(/\/+$/, "");
+  const proto = request.headers["x-forwarded-proto"] || request.protocol || "https";
+  const host = request.headers["x-forwarded-host"] || request.headers.host;
+  return `${proto}://${host}`;
+}
+
+function sanitizeMediaHeaders(headers = {}) {
+  const allowed = ["accept", "accept-language", "origin", "referer", "user-agent"];
+  const next = {};
+  for (const key of allowed) {
+    if (headers[key]) next[key] = headers[key];
+  }
+  if (!next["user-agent"]) next["user-agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
+  return next;
+}
+
+function createMediaToken(url, headers) {
+  const token = randomUUID().replace(/-/g, "");
+  mediaTokenCache.set(token, {
+    url,
+    headers: sanitizeMediaHeaders(headers),
+    expiresAt: Date.now() + mediaTokenTtlMs,
+  });
+  return token;
+}
+
+function cleanupMediaTokens() {
+  const now = Date.now();
+  for (const [token, entry] of mediaTokenCache.entries()) {
+    if (!entry || entry.expiresAt <= now) mediaTokenCache.delete(token);
+  }
+}
+
+function mediaProxyUrl(request, url, headers) {
+  cleanupMediaTokens();
+  const token = createMediaToken(url, headers);
+  return `${publicBaseUrl(request)}/api/media/${token}`;
+}
+
+function rewritePlaylistWithMediaTokens(playlist, baseUrl, headers, request) {
+  return playlist
+    .split(/\r?\n/)
+    .map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return line;
+
+      if (trimmed.startsWith("#")) {
+        return line.replace(/URI=(["'])([^"']+)\1/gi, (_match, quote, uri) => {
+          return `URI=${quote}${mediaProxyUrl(request, String(new URL(uri, baseUrl)), headers)}${quote}`;
+        });
+      }
+
+      return mediaProxyUrl(request, String(new URL(trimmed, baseUrl)), headers);
+    })
+    .join("\n");
+}
+
+async function fetchMediaEntry(entry, request) {
+  const headers = { ...entry.headers };
+  if (request.headers.range) headers.range = request.headers.range;
+  return fetch(entry.url, { headers, signal: AbortSignal.timeout(30000) });
+}
+
+async function fetchAndRewritePlaylist(url, headers, request) {
+  const result = await fetch(url, {
+    headers: sanitizeMediaHeaders(headers),
+    signal: AbortSignal.timeout(30000),
+  });
+  if (!result.ok) {
+    const error = new Error(`Streamfree playlist returned ${result.status}`);
+    error.statusCode = 502;
+    throw error;
+  }
+
+  const playlist = await result.text();
+  if (!playlist.trimStart().startsWith("#EXTM3U")) {
+    const error = new Error("Streamfree response is not an HLS playlist");
+    error.statusCode = 502;
+    throw error;
+  }
+
+  return rewritePlaylistWithMediaTokens(playlist, new URL(url), headers, request);
 }
 
 async function triggerPlayback(page) {
@@ -334,20 +434,23 @@ async function extractStream({ iframeUrl, referer }) {
 
     const page = await context.newPage();
     let finalM3u8 = "";
+    let finalM3u8Headers = {};
 
-    const capture = (url) => {
+    const capture = (url, headers = {}) => {
       if (!isLikelyPrimaryPlaylist(url)) return;
-      if (!finalM3u8 || /(?:master|index|playlist)/i.test(url)) finalM3u8 = url;
+      if (!finalM3u8 || /(?:master|index|playlist)/i.test(url)) {
+        finalM3u8 = url;
+        finalM3u8Headers = sanitizeMediaHeaders(headers);
+      }
     };
 
     page.on("request", (request) => {
-      capture(request.url());
+      capture(request.url(), request.headers());
       if (isInterestingNetworkUrl(request.url())) {
         pushLimited(debug.network, `REQ ${request.method()} ${request.resourceType()} ${request.url()}`);
       }
     });
     page.on("response", (response) => {
-      capture(response.url());
       if (isInterestingNetworkUrl(response.url())) {
         pushLimited(debug.network, `RES ${response.status()} ${response.url()}`);
       }
@@ -449,7 +552,7 @@ async function extractStream({ iframeUrl, referer }) {
     }
 
     debug.snapshots = await snapshotFrames(page);
-    return { url: finalM3u8, debug };
+    return { url: finalM3u8, headers: finalM3u8Headers, debug };
   } finally {
     activeContexts -= 1;
     if (context) await context.close().catch(() => {});
@@ -501,8 +604,88 @@ app.post("/api/extract", async (request, response) => {
   }
 });
 
+app.post("/api/extract-playlist", async (request, response) => {
+  if (!assertAuthorized(request, response)) return;
+  totalRequests += 1;
+  const startedAt = Date.now();
+
+  try {
+    const result = await Promise.race([
+      extractStream({
+        iframeUrl: request.body?.iframeUrl,
+        referer: request.body?.referer,
+      }),
+      timeoutError(requestTimeoutMs),
+    ]);
+    const playlist = await fetchAndRewritePlaylist(result.url, result.headers, request);
+    lastResult = {
+      ok: true,
+      status: 200,
+      elapsedMs: Date.now() - startedAt,
+      at: new Date().toISOString(),
+      debug: result.debug,
+    };
+    response.json({ success: true, playlist });
+  } catch (error) {
+    const status = Number(error?.statusCode || 500);
+    lastResult = {
+      ok: false,
+      status,
+      error: error instanceof Error ? error.message : "Unknown extractor error",
+      elapsedMs: Date.now() - startedAt,
+      at: new Date().toISOString(),
+      debug: error?.debug,
+    };
+    response.status(status).json({
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown extractor error",
+    });
+  }
+});
+
+app.get("/api/media/:token", async (request, response) => {
+  cleanupMediaTokens();
+  const entry = mediaTokenCache.get(String(request.params.token));
+  if (!entry) {
+    response.status(404).type("text/plain").send("Media token expired");
+    return;
+  }
+
+  try {
+    const result = await fetchMediaEntry(entry, request);
+    if (!result.ok) {
+      response.status(result.status).type("text/plain").send(`Streamfree media returned ${result.status}`);
+      return;
+    }
+
+    const contentType = result.headers.get("content-type") || "";
+    response.setHeader("cache-control", "public, max-age=300");
+    for (const header of ["accept-ranges", "content-range", "content-length"]) {
+      const value = result.headers.get(header);
+      if (value) response.setHeader(header, value);
+    }
+
+    if (contentType.includes("mpegurl") || /\.m3u8(?:[?#]|$)/i.test(entry.url)) {
+      const playlist = await result.text();
+      response.type("application/vnd.apple.mpegurl").send(rewritePlaylistWithMediaTokens(playlist, new URL(entry.url), entry.headers, request));
+      return;
+    }
+
+    const bytes = Buffer.from(await result.arrayBuffer());
+    if (!request.headers.range && bytes.subarray(0, 7).toString("utf8") === "#EXTM3U") {
+      const playlist = bytes.toString("utf8");
+      response.type("application/vnd.apple.mpegurl").send(rewritePlaylistWithMediaTokens(playlist, new URL(entry.url), entry.headers, request));
+      return;
+    }
+
+    response.type(contentType || "application/octet-stream").send(bytes);
+  } catch (error) {
+    response.status(502).type("text/plain").send(error instanceof Error ? error.message : "Cannot proxy Streamfree media");
+  }
+});
+
 app.get("/debug/status", (_request, response) => {
-  response.json({ ok: true, activeContexts, maxContexts, totalRequests, lastResult });
+  response.json({ ok: true, activeContexts, maxContexts, totalRequests, mediaTokens: mediaTokenCache.size, lastResult });
 });
 
 function startKeepAlive() {
