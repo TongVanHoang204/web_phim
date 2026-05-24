@@ -106,6 +106,8 @@ async function resolveHhkungfuHlsWithPlaywright(directEmbedUrl: string, episodeK
           args: [
             "--autoplay-policy=no-user-gesture-required",
             "--disable-gpu",
+            "--disable-software-rasterizer",
+            "--mute-audio",
             "--disable-dev-shm-usage",
             "--no-sandbox",
             "--disable-setuid-sandbox",
@@ -134,6 +136,8 @@ async function resolveHhkungfuHlsWithPlaywright(directEmbedUrl: string, episodeK
               args: [
                 "--autoplay-policy=no-user-gesture-required",
                 "--disable-gpu",
+                "--disable-software-rasterizer",
+                "--mute-audio",
                 "--disable-dev-shm-usage",
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
