@@ -822,6 +822,7 @@ function HlsVideoPlayer({
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const iframeLoadedRef = useRef(false);
   const hideControlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [hlsError, setHlsError] = useState("");
   const [controlsVisible, setControlsVisible] = useState(true);
@@ -1091,13 +1092,14 @@ function HlsVideoPlayer({
   useEffect(() => {
     setIframeTimedOut(false);
     setIframeDismissed(false);
+    iframeLoadedRef.current = false;
 
     if (episode.link_m3u8 || !episode.link_embed.includes("/api/hhkungfu/player")) {
       return undefined;
     }
 
     const timer = window.setTimeout(() => {
-      setIframeTimedOut(true);
+      if (!iframeLoadedRef.current) setIframeTimedOut(true);
     }, 14000);
 
     return () => window.clearTimeout(timer);
@@ -1116,8 +1118,11 @@ function HlsVideoPlayer({
           ref={iframeRef}
           src={fallbackUrl}
           aria-label={title}
-          allow="autoplay; encrypted-media; picture-in-picture"
-          allowFullScreen
+          allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+          onLoad={() => {
+            iframeLoadedRef.current = true;
+            setIframeTimedOut(false);
+          }}
         />
         {showIframeFallback ? (
           <div className="iframe-timeout" role="status" aria-live="polite">

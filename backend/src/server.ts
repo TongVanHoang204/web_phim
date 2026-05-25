@@ -1253,6 +1253,40 @@ function rewriteStreamfreeUrls(value: string) {
     .replace(/\\\/\\\/streamfree\.vip\\\//g, "\\/api\\/streamfree\\/");
 }
 
+function escapeHtmlAttribute(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+const playerIframeAllow = "autoplay; encrypted-media; picture-in-picture; fullscreen";
+
+function normalizeIframePermissions(html: string) {
+  return html.replace(/<iframe\b([^>]*)>/gi, (_match, attrs: string) => {
+    let nextAttrs = attrs.replace(/\s(?:webkit|moz)?allowfullscreen(?:=(?:"[^"]*"|'[^']*'|[^\s>]+))?/gi, "");
+    const allowMatch = nextAttrs.match(/\sallow=(["'])(.*?)\1/i);
+
+    if (!allowMatch) {
+      return `<iframe${nextAttrs} allow="${playerIframeAllow}">`;
+    }
+
+    const existing = allowMatch[2]
+      .split(/[;\s]+/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+    const mergedAllow = Array.from(new Set([...existing, ...playerIframeAllow.split("; ").filter(Boolean)])).join("; ");
+    nextAttrs = nextAttrs.replace(/\sallow=(["'])(.*?)\1/i, ` allow="${escapeHtmlAttribute(mergedAllow)}"`);
+    return `<iframe${nextAttrs}>`;
+  });
+}
+
+function iframePlayerDocument(src: string) {
+  return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;width:100%;height:100%;background:#000;overflow:hidden}iframe{position:fixed;inset:0;display:block;width:100%!important;height:100%!important;border:0}</style></head><body><iframe src="${escapeHtmlAttribute(src)}" allow="${playerIframeAllow}" loading="lazy"></iframe></body></html>`;
+}
+
 const streamfreeDetectorGuardJs =
   '!function(){try{var n=function(){};["clear","table","log","info","debug","dir","warn","error","trace"].forEach(function(k){try{console[k]=n}catch(e){}});var isNoise=function(u){u=String(u||"");return /ibyteimg\\.com\\/obj\\/ad-site-i18n|\\/cdn-cgi\\/rum/.test(u)};try{var of=window.fetch;if(of){window.fetch=function(i,o){var u=typeof i==="string"?i:i&&i.url;if(isNoise(u)){return Promise.resolve(new Response("",{status:204,statusText:"No Content"}))}return of.apply(this,arguments)}}}catch(e){}try{var O=XMLHttpRequest.prototype.open,S=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.open=function(m,u){this.__tsverseNoise=isNoise(u);return O.apply(this,arguments)};XMLHttpRequest.prototype.send=function(){if(this.__tsverseNoise){var x=this;setTimeout(function(){try{Object.defineProperty(x,"readyState",{value:4,configurable:true});Object.defineProperty(x,"status",{value:204,configurable:true});Object.defineProperty(x,"statusText",{value:"No Content",configurable:true});Object.defineProperty(x,"responseText",{value:"",configurable:true});Object.defineProperty(x,"response",{value:"",configurable:true});x.onreadystatechange&&x.onreadystatechange(new Event("readystatechange"));x.onload&&x.onload(new Event("load"));x.onloadend&&x.onloadend(new Event("loadend"))}catch(e){}},0);return}return S.apply(this,arguments)}}catch(e){}var clean=function(v){return typeof v==="string"?v.replace(/\\bdebugger\\b/g,"void 0"):v};try{var nf=window.Function;window.Function=new Proxy(nf,{apply:function(t,a,r){return Reflect.apply(t,a,Array.prototype.map.call(r,clean))},construct:function(t,r){return Reflect.construct(t,Array.prototype.map.call(r,clean))}})}catch(e){}try{var ne=window.eval;window.eval=function(v){return ne.call(this,clean(v))}}catch(e){}var w=function(){return window.innerWidth},h=function(){return window.innerHeight};try{Object.defineProperty(window,"outerWidth",{get:w,configurable:true})}catch(e){}try{Object.defineProperty(window,"outerHeight",{get:h,configurable:true})}catch(e){}try{Object.defineProperty(navigator,"webdriver",{get:function(){return false},configurable:true})}catch(e){}}catch(e){}}();';
 const streamfreeDetectorGuard = '<script src="/streamfree-guard.js"></script>';
@@ -3189,27 +3223,12 @@ app.get("/api/phimapi/hls-proxy", async (request, response) => {
 
 app.get("/api/hhkungfu/player-frame", (request, response) => {
   const embedUrl = String(request.query.url || "");
-  response.type("text/html").send(`
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <meta charset="utf-8">
-        <style>
-          html, body, iframe {
-            width: 100%;
-            height: 100%;
-            margin: 0;
-            padding: 0;
-            border: none;
-            overflow: hidden;
-          }
-        </style>
-      </head>
-      <body>
-        <iframe src="${embedUrl}"></iframe>
-      </body>
-    </html>
-  `);
+  if (!embedUrl) {
+    response.status(400).type("text/plain").send("Missing player url");
+    return;
+  }
+
+  response.type("text/html").send(iframePlayerDocument(embedUrl));
 });
 
 app.get("/api/hhkungfu/hls/:episodeId", async (request, response) => {
@@ -3450,7 +3469,7 @@ app.get("/api/animehay/player/:episodeId", async (request, response) => {
 
     response
       .type("text/html")
-      .send(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;width:100%;height:100%;background:#000;overflow:hidden}iframe{position:fixed;inset:0;display:block;width:100%!important;height:100%!important;border:0}</style></head><body><iframe src="${iframeUrl}" allowfullscreen allow="autoplay;encrypted-media;fullscreen" loading="lazy"></iframe></body></html>`);
+      .send(iframePlayerDocument(iframeUrl));
   } catch (error) {
     response.status(502).type("text/html").send(errorDetail(error) || "Cannot load AnimeHay player");
   }
@@ -3727,7 +3746,7 @@ app.get("/api/hhkungfu/player", async (request, response) => {
   }
 
   try {
-    const playerHtml = rewriteStreamfreeUrls(await fetchHhkungfuPlayerHtml({ postId, chapter, type, sv }));
+    const playerHtml = normalizeIframePermissions(rewriteStreamfreeUrls(await fetchHhkungfuPlayerHtml({ postId, chapter, type, sv })));
     response
       .type("text/html")
       .send(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;width:100%;height:100%;background:#000;overflow:hidden}iframe{position:fixed;inset:0;display:block;width:100%!important;height:100%!important;border:0}.player-label-mask{position:fixed;top:0;left:0;z-index:2147483647;width:min(340px,55vw);height:64px;pointer-events:none;background:linear-gradient(90deg,#000 0%,#000 70%,rgba(0,0,0,0) 100%)}</style></head><body>${playerHtml}<div class="player-label-mask" aria-hidden="true"></div></body></html>`);
